@@ -1,0 +1,26 @@
+#!/bin/sh
+
+echo "================================================="
+echo "Running Swini pre-push checks..."
+echo "================================================="
+
+echo "\n1. Checking formatting (cargo fmt --check)"
+if ! cargo fmt --check; then
+  echo "\n❌ Error: Formatting check failed! Run 'cargo fmt' to fix, then try pushing again."
+  exit 1
+fi
+
+echo "\n2. Running Clippy (cargo clippy)"
+if ! cargo clippy --all-targets --all-features -- -D warnings; then
+  echo "\n❌ Error: Clippy checks failed! Please fix the warnings above."
+  exit 1
+fi
+
+echo "\n3. Running unit tests (skipping e2e)"
+if ! cargo nextest run -E 'kind(lib) | kind(bin)'; then
+  echo "\n❌ Error: Unit tests failed! Please fix the failing tests."
+  exit 1
+fi
+
+echo "\n✅ All checks passed! Pushing to remote..."
+exit 0
