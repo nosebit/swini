@@ -1,0 +1,275 @@
+/* =====================
+   CSS Custom Properties
+   ===================== */
+:root {
+  --bg: #ffffff;
+  --fg: #000000;
+  --fg-muted: #737373;
+  --fg-subtle: #a3a3a3;
+  --box-bg: #f5f5f5;
+  --box-border: #e5e5e5;
+  --btn-hover-bg: #e5e5e5;
+  --toggle-border: #d4d4d4;
+  --footer-border: #e5e5e5;
+}
+
+[data-theme="dark"] {
+  --bg: #0a0a0a;
+  --fg: #ffffff;
+  --fg-muted: #a3a3a3;
+  --fg-subtle: #737373;
+  --box-bg: #171717;
+  --box-border: #262626;
+  --btn-hover-bg: #262626;
+  --toggle-border: #404040;
+  --footer-border: #262626;
+}
+
+/* =====================
+   Reset & Base
+   ===================== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Helvetica, Arial, sans-serif;
+  background-color: var(--bg);
+  color: var(--fg);
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  font-size: 16px;
+  line-height: 1.5;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* =====================
+   Header / Nav
+   ===================== */
+header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background-color: var(--bg);
+  transition: background-color 0.2s ease;
+}
+
+nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 24px;
+  width: 100%;
+}
+
+.logo-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  font-size: 1.125rem;
+  letter-spacing: -0.01em;
+}
+
+.logo-img {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+/* Theme toggle */
+.theme-toggle {
+  background: none;
+  border: 1px solid var(--toggle-border);
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--fg-muted);
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.theme-toggle:hover {
+  background-color: var(--box-bg);
+  color: var(--fg);
+  border-color: var(--fg-subtle);
+}
+
+.theme-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+
+.icon-sun {
+  display: none;
+}
+
+.icon-moon {
+  display: block;
+}
+
+[data-theme="dark"] .icon-sun {
+  display: block;
+}
+
+[data-theme="dark"] .icon-moon {
+  display: none;
+}
+
+/* =====================
+   Main
+   ===================== */
+main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 64px 24px 96px;
+  max-width: 1152px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+h1 {
+  font-size: 1.875rem;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  margin-bottom: 48px;
+  text-align: center;
+}
+
+/* =====================
+   Install Box
+   ===================== */
+.install-section {
+  width: 100%;
+  max-width: 560px;
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.install-box {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: var(--box-bg);
+  border: 1px solid var(--box-border);
+  border-radius: 10px;
+  padding: 0;
+  overflow: hidden;
+  margin-bottom: 8px;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.command-text {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;
+  font-size: 0.875rem;
+  color: var(--fg);
+  padding: 12px 16px;
+  flex: 1;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: all;
+}
+
+.copy-btn {
+  background: none;
+  border: none;
+  border-left: 1px solid var(--box-border);
+  cursor: pointer;
+  color: var(--fg-subtle);
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease, background-color 0.15s ease;
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
+.copy-btn:hover {
+  color: var(--fg);
+  background-color: var(--btn-hover-bg);
+}
+
+.copy-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.copy-btn .icon-check {
+  display: none;
+  color: #22c55e;
+}
+
+.copy-btn.copied .icon-copy {
+  display: none;
+}
+
+.copy-btn.copied .icon-check {
+  display: block;
+}
+
+.install-hint {
+  font-size: 0.75rem;
+  color: var(--fg-muted);
+  margin-bottom: 0;
+}
+
+/* =====================
+   Footer
+   ===================== */
+footer {
+  transition: border-color 0.2s ease;
+}
+
+.footer-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  width: 100%;
+}
+
+.footer-copy {
+  font-size: 0.75rem;
+  color: var(--fg-muted);
+}
+
+.footer-links {
+  display: flex;
+  gap: 24px;
+}
+
+.footer-links a {
+  font-size: 0.75rem;
+  color: var(--fg-muted);
+  transition: color 0.15s ease;
+}
+
+.footer-links a:hover {
+  color: var(--fg);
+}
