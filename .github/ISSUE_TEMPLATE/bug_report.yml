@@ -1,12 +1,12 @@
 name: Bug Report
-description: Create a report to help us improve Simian
+description: Create a report to help us improve Swini
 title: "[Bug]: "
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to fill out this bug report! 
+        Thanks for taking the time to fill out this bug report!
   - type: textarea
     id: description
     attributes:
@@ -18,9 +18,11 @@ body:
     id: reproduction
     attributes:
       label: Steps to Reproduce
-      description: How can we reproduce this? Please provide any relevant code snippets.
+      description:
+        How can we reproduce this? Please provide any relevant code snippets or
+        command invocations.
       placeholder: |
-        1. Run 'simian paper new foo'
+        1. Run 'swini daemon start'
         2. See error
     validations:
       required: true
@@ -28,14 +30,17 @@ body:
     id: expected
     attributes:
       label: Expected behavior
-      description: A clear and concise description of what you expected to happen.
+      description:
+        A clear and concise description of what you expected to happen.
     validations:
       required: true
   - type: input
     id: version
     attributes:
-      label: Simian Version
-      description: What version of Simian are you running? (e.g., v0.1.2)
+      label: Swini Version
+      description:
+        What version of Swini are you running? (e.g., `swini --version` or
+        v0.1.0)
     validations:
       required: true
   - type: dropdown
@@ -53,5 +58,7 @@ body:
     id: logs
     attributes:
       label: Relevant log output or terminal traces
-      description: Please copy and paste any relevant log output. This will be automatically formatted into code, so no need for backticks.
+      description:
+        Please copy and paste any relevant log output. This will be
+        automatically formatted into code, so no need for backticks.
       render: shell
