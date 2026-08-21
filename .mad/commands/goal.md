@@ -5,21 +5,10 @@ file containing the goal of a new feature the user wants to implements.
 
 <!----->
 
-## Global Rules
+## Command Rules
 
-- **Never write files** without explicit user confirmation.
-- Ask clarifying questions in small batches (2–3 at a time), never as a long
-  form.
 - Keep `goal.md` product-focused. If the user mentions implementation details,
   capture them in `## Constraints`, not `## Requirements`.
-- The final `goal.md` must be fully self-contained — someone reading it cold
-  should understand the feature without needing the conversation context.
-- **Never narrate internal steps or decisions.** Do not tell the user which
-  step, mode, or checklist item you're on, and do not explain _why_ you're about
-  to do something — including paraphrased reasoning like "No existing goal.md
-  was found, so I'll start fresh" or "Since you mentioned X, I'll do Y." This
-  applies regardless of wording. The user should see only the output each step
-  defines, never the routing logic that produced it.
 
 <!----->
 
@@ -42,22 +31,25 @@ Copy this checklist and track your progress:
 
 ### Step 1 — Load Context
 
-Read the `.mad/memory/lore.md` file only if it is not in your context yet:
+Read `.mad/rules.md` if it is not already in your context.
 
 <!----->
 
 ### Step 2 — Detect the feature
 
-Determine the feature stored in `specs/0000-<feature-slug>/` you are dealing
-with from the context. **This detection is internal** - do not announce which
-mode you picked or why. Just proceed silently to the step it points to.
+Determine which `specs/<nnnn>-<feature-slug>/` folder (if any) you're dealing
+with. **This detection is internal** - do not announce which mode you picked or
+why. Just proceed silently to the step it points to.
 
-- If such a feature can be determined and a `specs/0000-<feature-slug>/goal.md`
-  already exists, then read it, present a summary to the user and ask them what
-  needs to be changed. Remember the `<feature-slug>` so it can be used in other
-  steps and skip to Step 4 with the existing content.
-- If no feature can be determined, assume you are dealing with a completely new
-  feature and move to Step 3.
+- If a feature slug can be inferred from context — the user's message names it
+  explicitly, or it can be read off the current git branch name — look for a
+  `specs/*-<feature-slug>/` folder matching that slug. If it exists and has
+  a `goal.md`, read it, present a summary to the user and ask them what needs to
+  be changed. Remember the exact folder name so it can be reused in other
+  steps, then skip to Step 4 with the existing content.
+- If no feature slug can be inferred from context, or no folder matches the
+  inferred slug, assume you are dealing with a completely new feature and move
+  to Step 3.
 
 <!----->
 
@@ -102,15 +94,24 @@ the user explicitly approves.
 
 ### Step 6 — Confirm Spec Path
 
-Propose a spec folder path derived from the feature name:
-`specs/0000-{feature-slug}/goal.md`
+If this is an existing feature being updated, skip this step and reuse the
+exact folder name detected in Step 2.
 
-Ask the user to confirm or rename the slug.
+If this is a new feature:
 
-Remind the user: _"The `0000` prefix is a placeholder. Rename the folder to
-match the PR number once it is opened."_
+- If the user already gave a spec name or number for the feature (e.g. they
+  want to use a GitHub issue id), propose `specs/{their-id}-{feature-slug}/`
+  using it.
+- Otherwise, look at the existing `specs/*/` folders, pick the next unused
+  sequential number (zero-padded to 4 digits, e.g. `0001`, `0002`, ...), and
+  propose `specs/{next-number}-{feature-slug}/`.
 
-**Done when:** User confirms the path.
+Either way, ask the user to confirm the proposed path or replace it entirely
+(e.g. with a GitHub issue id) — whatever is confirmed here is permanent, there
+is no renaming step later.
+
+**Done when:** The spec folder path is settled (confirmed by the user for a new
+feature, or carried over from Step 2 for an existing one).
 
 <!----->
 
@@ -124,5 +125,5 @@ Write the approved `goal.md` to the confirmed path.
 
 Summarize what was created. Suggest next steps:
 
-- Open a PR with `specs/0000-{feature-slug}/goal.md` for community review, OR
+- Open a PR with the new `goal.md` for community review, OR
 - Run `/mad.plan` to generate the technical plan.

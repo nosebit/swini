@@ -43,6 +43,16 @@ module README before modifying code in that module.
 - Code MUST be readable by a human reviewer who did not write it. If a block of
   code requires context to understand, add a comment explaining the context.
 
+**Documentation:**
+
+- MUST: every directory under `src/` that groups related files (a module) has
+  its own `README.md` describing the module's intent/responsibility and briefly
+  explaining what each file in it does. Write it clearly enough that a software
+  engineer or AI Agent unfamiliar with the module can understand it without
+  reading all the code first.
+- MUST: keep a module's `README.md` up to date — update it whenever files are
+  added, removed, renamed, or repurposed within that module.
+
 **Testing:**
 
 - MUST write unit tests for all new functions and logic.

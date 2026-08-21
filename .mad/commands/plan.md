@@ -6,22 +6,14 @@ defined in an approved `goal.md`.
 
 <!----->
 
-## Global Rules
+## Command Rules
 
-- **Never write files** without explicit user confirmation.
-- Ask clarifying questions in small batches (2–3 at a time), never as a long
-  form.
 - `plan.md` is implementation-focused. Do not restate product requirements from
   `goal.md` — reference them instead.
 - **Every major implementation section must include a concrete code snippet**
   (function signatures, data structures, interfaces, or short pseudo-code) — not
   just prose. A software engineer unfamiliar with the conversation must be able
   to read `plan.md` and start implementing.
-- Follow the project conventions in `.mad/memory/lore.md` (architecture, coding
-  rules, testing rules) when proposing code.
-- The final `plan.md` must be fully self-contained — someone reading it cold
-  should understand both what to build and how, without needing the conversation
-  context.
 
 <!----->
 
@@ -45,28 +37,33 @@ Copy this checklist and track your progress:
 
 ### Step 1 — Load Context
 
-Read the `.mad/memory/lore.md` file only if it is not in your context yet.
+Read `.mad/rules.md` if it is not already in your context.
 
 <!----->
 
 ### Step 2 — Detect the feature
 
-Determine the feature stored in `specs/0000-<feature-slug>/` you are dealing
-with from the context.
+Determine which `specs/<nnnn>-<feature-slug>/` folder you are dealing with:
 
-- If such a feature can be determined and a `specs/0000-<feature-slug>/plan.md`
-  already exists, then read it, present a summary to the user and ask them what
-  needs to be changed. Skip to Step 6 with the existing content. Remember the
-  `<feature-slug>` so it can be used in other steps.
-- If such a feature cannot be determined, then stop and ask the user to run
-  `/mad.goal`.
+- If a feature slug can be inferred from context — the user's message names it
+  explicitly, or it can be read off the current git branch name — look for a
+  `specs/*-<feature-slug>/` folder matching that slug. If none exists, stop
+  and ask the user to run `/mad.goal` first.
+- If no feature slug can be inferred from context, stop and ask the user which
+  feature they mean.
+
+Remember the exact folder name found so it can be reused in other steps.
+
+If a `plan.md` already exists in that folder, read it, present a summary to the
+user and ask them what needs to be changed. Skip to Step 6 with the existing
+content.
 
 <!----->
 
 ### Step 3 — Read the Goal
 
-Read the `specs/0000-<feature-slug>/goal.md` in case it exists or otherwise stop
-and ask the user to run `/mad.goal`.
+Read `goal.md` in the folder detected in Step 2, or otherwise stop and ask the
+user to run `/mad.goal`.
 
 <!----->
 
@@ -126,7 +123,8 @@ the user explicitly approves.
 
 ### Step 8 — Write File
 
-Write the approved `plan.md` to `specs/<feature-slug>/plan.md`.
+Write the approved `plan.md` to `plan.md` in the exact folder detected in
+Step 2.
 
 <!----->
 
