@@ -1,5 +1,6 @@
 mod cli;
 mod core;
+mod store;
 
 use std::error::Error;
 
