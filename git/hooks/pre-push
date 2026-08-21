@@ -6,13 +6,13 @@ echo "================================================="
 
 echo "\n1. Checking formatting (cargo fmt --check)"
 if ! cargo fmt --check; then
-  echo "\n❌ Error: Formatting check failed! Run 'cargo fmt' to fix, then try pushing again."
+  echo "\n❌ Error: Formatting check failed! Run 'just fix' (or 'cargo fmt') to fix, then try pushing again."
   exit 1
 fi
 
 echo "\n2. Running Clippy (cargo clippy)"
 if ! cargo clippy --all-targets --all-features -- -D warnings; then
-  echo "\n❌ Error: Clippy checks failed! Please fix the warnings above."
+  echo "\n❌ Error: Clippy checks failed! Run 'just fix' to attempt auto-fixes or fix the warnings above."
   exit 1
 fi
 

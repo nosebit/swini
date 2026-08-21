@@ -21,3 +21,9 @@ test-e2e:
 # Generate an HTML test coverage report and open it
 coverage:
   cargo llvm-cov nextest --open
+
+# Auto-fix formatting and clippy warnings
+fix:
+  cargo fmt
+  cargo clippy --fix --allow-dirty --allow-staged --all-targets --all-features
+
