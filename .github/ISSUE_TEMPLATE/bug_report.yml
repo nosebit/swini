@@ -1,12 +1,11 @@
-name: Bug Report
+name: 🐛 Bug report
 description: Create a report to help us improve Swini
-title: "[Bug]: "
-labels: ["bug"]
+type: Bug
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to fill out this bug report!
+        Thank you so much for taking the time to fill out this bug report! Swini 🐷 depends on efforts like this to keep improving so we are deeply grateful for your contribution.
   - type: textarea
     id: description
     attributes:
@@ -19,8 +18,8 @@ body:
     attributes:
       label: Steps to Reproduce
       description:
-        How can we reproduce this? Please provide any relevant code snippets or
-        command invocations.
+        How can the bug be reproduced? Please provide any relevant code snippets
+        or command invocations.
       placeholder: |
         1. Run 'swini daemon start'
         2. See error
@@ -31,16 +30,17 @@ body:
     attributes:
       label: Expected behavior
       description:
-        A clear and concise description of what you expected to happen.
+        A clear and concise description of what was expected instead of what
+        happened.
     validations:
       required: true
   - type: input
     id: version
     attributes:
-      label: Swini Version
+      label: Version
       description:
-        What version of Swini are you running? (e.g., `swini --version` or
-        v0.1.0)
+        What version of Swini showed this miss behavior? (e.g., `swini
+        --version` or v0.1.0)
     validations:
       required: true
   - type: dropdown
