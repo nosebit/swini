@@ -2,6 +2,11 @@ name: Deploy Site to GitHub Pages
 
 on:
   push:
+    branches:
+      - main
+    paths:
+      - "website/**"
+      - ".github/workflows/pages.yml"
     tags:
       - "v[0-9]+.*"
   workflow_dispatch:
