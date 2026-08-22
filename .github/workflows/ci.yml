@@ -21,10 +21,10 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Install nextest & cargo-llvm-cov
+      - name: Install nextest, cargo-llvm-cov & protoc
         uses: taiki-e/install-action@v2
         with:
-          tool: nextest,cargo-llvm-cov
+          tool: nextest,cargo-llvm-cov,protoc
 
       - name: Check Formatting
         run: cargo fmt --all -- --check
