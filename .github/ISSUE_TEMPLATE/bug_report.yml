@@ -6,34 +6,6 @@ body:
     attributes:
       value: |
         Thank you so much for taking the time to fill out this bug report! Swini 🐷 depends on efforts like this to keep improving so we are deeply grateful for your contribution.
-  - type: textarea
-    id: description
-    attributes:
-      label: Describe the bug
-      description: A clear and concise description of what the bug is.
-    validations:
-      required: true
-  - type: textarea
-    id: reproduction
-    attributes:
-      label: Steps to Reproduce
-      description:
-        How can the bug be reproduced? Please provide any relevant code snippets
-        or command invocations.
-      placeholder: |
-        1. Run 'swini daemon start'
-        2. See error
-    validations:
-      required: true
-  - type: textarea
-    id: expected
-    attributes:
-      label: Expected behavior
-      description:
-        A clear and concise description of what was expected instead of what
-        happened.
-    validations:
-      required: true
   - type: input
     id: version
     attributes:
@@ -52,6 +24,34 @@ body:
         - Linux
         - Windows
         - Other
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description:
+        A clear and concise description of what was expected instead of what
+        happened.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description:
+        How can the bug be reproduced? Please provide any relevant code snippets
+        or command invocations.
+      placeholder: |
+        1. Run 'swini daemon start'
+        2. See error
     validations:
       required: true
   - type: textarea
