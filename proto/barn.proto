@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package swini.barn;
+
+service BarnApi {
+  // Raft transport (see src/store/barn/raft/network.rs —
+  // NetworkFactory/NetworkConnection). Requests and responses are opaque
+  // byte envelopes rather than hand-mirrored protobuf messages:
+  // NetworkConnection serializes openraft's own
+  // AppendEntriesRequest/VoteRequest/InstallSnapshotRequest (and their
+  // response counterparts, all already Serialize/Deserialize) into
+  // `payload`, the same way LogStorage and Storage already serialize
+  // everything they persist. That keeps this contract from needing to be
+  // hand-updated every time openraft's message types change.
+  rpc AppendEntries(BarnMessage) returns (BarnMessage);
+  rpc Vote(BarnMessage) returns (BarnMessage);
+  rpc InstallSnapshot(BarnMessage) returns (BarnMessage);
+
+  // Worker nodes don't keep a local copy of the state machine, so they
+  // forward reads and writes to a node that does (i.e., a server node).
+  // Payload/response are opaque bytes for the same reason as the raft RPCs
+  // above: the actual shape is `Action`/`ActionResult` (writes) or
+  // `ReadAction`/`ReadResult` (reads) from src/store/barn/types.rs,
+  // serialized the same way.
+  rpc ForwardWrite(BarnMessage) returns (BarnMessage);
+  rpc ForwardRead(BarnMessage) returns (BarnMessage);
+
+  // Adds a node to the raft cluster's membership. Unlike the RPCs above,
+  // this isn't part of the raft transport protocol itself — it's a
+  // control-plane operation triggered by an operator (or a joining node)
+  // that results in a membership-change log entry, so it gets real
+  // request/response fields instead of an opaque payload.
+  rpc NodeAdd(NodeAddReq) returns (NodeAddRes);
+}
+
+message BarnMessage {
+  bytes payload = 1;
+}
+
+message NodeAddReq {
+  uint64 id = 1;
+  string name = 2;
+  string api_addr = 3;
+}
+
+message NodeAddRes {}

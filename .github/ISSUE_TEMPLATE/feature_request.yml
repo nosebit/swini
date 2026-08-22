@@ -1,36 +1,30 @@
-name: Feature Request
-description: Propose a new feature for Simian
-title: "[Feature]: "
-labels: ["enhancement"]
+name: 🚀 Feature Request
+description: Propose a new feature for Swini
+type: Feature
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for suggesting a new feature for Simian! 
-        
-        > [!NOTE]
-        > If this is a massive architectural change or API overhaul, we may ask you to submit an RFC (Request for Comments) design document to the [simian-rfcs](https://github.com/nosebit/simian-rfcs) repository instead!
+        Thank you so much for suggesting a new feature for Swini 🐷!
   - type: textarea
-    id: problem
     attributes:
-      label: Is your feature request related to a problem? Please describe.
-      description: A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
+      label: What is the problem this feature will solve?
+      description:
+        A clear and concise description of what the problem is. Ex. I'm always
+        frustrated when [...]
     validations:
       required: true
   - type: textarea
     id: solution
     attributes:
-      label: Describe the solution you'd like
-      description: A clear and concise description of what you want to happen.
+      label: How will this feature solve the problem?
+      description: A clear and concise description of is expected to happen.
     validations:
       required: true
   - type: textarea
     id: alternatives
     attributes:
-      label: Describe alternatives you've considered
-      description: A clear and concise description of any alternative solutions or features you've considered.
-  - type: textarea
-    id: context
-    attributes:
-      label: Additional context
-      description: Add any other context or screenshots about the feature request here.
+      label: What alternatives were considered?
+      description:
+        A clear and concise description of any alternative solutions or features
+        that have being considered before opening this request.
