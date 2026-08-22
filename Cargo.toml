@@ -3,6 +3,14 @@ name = "swini"
 version = "0.1.0"
 edition = "2021"
 
+[lints.rust]
+dead_code = "allow"
+
+[lints.clippy]
+result_large_err = "allow"
+enum_variant_names = "allow"
+module_inception = "allow"
+
 [dependencies]
 async-trait = "0.1.92"
 clap = { version = "4.6.6", features = ["derive"] }
