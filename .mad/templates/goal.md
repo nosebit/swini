@@ -43,7 +43,12 @@ EXAMPLE:
 ## Constraints
 
 <!--
-Any non-goals or general rules for the future should go here.
+Non-goals, scope boundaries, and priority/tradeoff calls that bound this
+feature — not implementation choices. If the user volunteers an
+implementation-level detail (a specific library, protocol, data structure,
+algorithm, etc.) with no product-facing shape, it doesn't belong here or
+anywhere else in this document — see .mad/commands/goal.md for where it goes
+instead.
 
 EXAMPLE:
 
@@ -52,8 +57,8 @@ EXAMPLE:
 - The Barn stores **cluster state only** (node registrations, resource
   availability, workload placements). It is not responsible for application data,
   logs, or metrics.
-- The Barn is **not a document store** — values are plain byte slices keyed by
-  string. No querying, filtering, or indexing.
+- The Barn is **not a document store** — it supports simple key-based get/put
+  only. No querying, filtering, or indexing.
 - Performance is secondary to correctness at this stage. Optimizations can be
   addressed in a follow-up spec.
 -->
@@ -83,3 +88,20 @@ the cluster lacks quorum, but does not corrupt or lose existing data
 **THEN** it receives a full snapshot of the current Barn state and becomes
 consistent with the rest of the cluster before serving any reads or writes
 -->
+
+<!--
+plan-notes is hidden metadata, not a visible section. If the user volunteered
+implementation-level detail — per the product-vs-implementation test in the
+Constraints comment above — append the block below verbatim (placeholders
+replaced by real content) to the very end of the file. Omit it entirely if
+there's nothing to carry forward.
+
+```
+<!-- plan-notes (for /mad.plan — not part of the product spec):
+- {implementation detail 1}
+- {implementation detail 2}
+-->
+
+```
+-->
+```
