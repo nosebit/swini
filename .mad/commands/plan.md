@@ -47,8 +47,8 @@ Determine which `specs/<nnnn>-<feature-slug>/` folder you are dealing with:
 
 - If a feature slug can be inferred from context — the user's message names it
   explicitly, or it can be read off the current git branch name — look for a
-  `specs/*-<feature-slug>/` folder matching that slug. If none exists, stop
-  and ask the user to run `/mad.goal` first.
+  `specs/*-<feature-slug>/` folder matching that slug. If none exists, stop and
+  ask the user to run `/mad.goal` first.
 - If no feature slug can be inferred from context, stop and ask the user which
   feature they mean.
 
@@ -63,7 +63,9 @@ content.
 ### Step 3 — Read the Goal
 
 Read `goal.md` in the folder detected in Step 2, or otherwise stop and ask the
-user to run `/mad.goal`.
+user to run `/mad.goal`. If it ends with a hidden `plan-notes` comment, treat
+its contents as technical context the user already provided — it feeds Step 5
+below and must not be asked about again.
 
 <!----->
 
@@ -86,11 +88,13 @@ concrete, idiomatic technical approach.
 Read `.mad/templates/plan.md` to understand the required structure of the final
 `plan.md` you need to generate.
 
-Using the goal, the template, and what you learned exploring the codebase,
-identify the top 2–3 technical decisions that aren't already answered by the
-goal or the existing codebase conventions (e.g. data model shape, library
-choice, concurrency model, API surface). Ask about those. Do not ask about
-anything you can already answer by reading the code.
+Using the goal (including any `plan-notes`), the template, what you learned
+exploring the codebase, and anything the user has already said in this
+conversation, identify the top 2–3 technical decisions that are still genuinely
+open — not already answered by the goal, its `plan-notes`, existing codebase
+conventions, or the conversation so far (e.g. data model shape, library choice,
+concurrency model, API surface). Ask about those only. Do not ask about anything
+you can already answer from those sources.
 
 **Done when:** You have enough information to write concrete code snippets for
 every implementation section, without guessing.
