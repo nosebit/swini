@@ -2,13 +2,15 @@ use std::io::Cursor;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::types::{Action, ActionResult, TypeConfig};
+use super::types::{Action, ActionResult, ReadAction, ReadResult, TypeConfig};
+use crate::store::ItemStoreEvent;
 use openraft::{
   storage::{RaftStateMachine, Snapshot},
   EntryPayload, LogId, OptionalSend, RaftSnapshotBuilder, RaftTypeConfig,
   SnapshotMeta, StorageError, StorageIOError, StoredMembership,
 };
 use redb::{ReadableDatabase, ReadableTable, TableDefinition};
+use tokio::sync::broadcast;
 
 /// Shorthand for this state machine's node id and node types, so method
 /// signatures below don't have to spell out `<TypeConfig as
@@ -39,6 +41,7 @@ const CURRENT_SNAPSHOT_DATA_META_KEY: &str = "current_snapshot_data";
 #[derive(Clone)]
 pub struct Storage {
   db: Arc<redb::Database>,
+  events_tx: broadcast::Sender<ItemStoreEvent<String, Vec<u8>>>,
 }
 
 impl Storage {
@@ -62,7 +65,61 @@ impl Storage {
       .commit()
       .map_err(|err| StorageIOError::write_state_machine(&err))?;
 
-    Ok(Self { db })
+    let (events_tx, _) = broadcast::channel(1024);
+
+    Ok(Self { db, events_tx })
+  }
+
+  /// Subscribes to `ItemStoreEvent`s emitted every time [`Self::apply_action`]
+  /// durably applies a committed `Set`/`Patch`/`Delete` — on every node,
+  /// leader or follower, matching every other node's copy of the data.
+  pub(super) fn subscribe(
+    &self,
+  ) -> broadcast::Receiver<ItemStoreEvent<String, Vec<u8>>> {
+    self.events_tx.subscribe()
+  }
+
+  /// Answers a `ReadAction` directly from local data. Does not check
+  /// leadership or staleness — that decision belongs to whoever calls this
+  /// (`Barn::local_read`), not to storage itself.
+  pub(super) fn read(&self, action: ReadAction) -> ReadResult {
+    let read_txn = match self.db.begin_read() {
+      Ok(txn) => txn,
+      Err(err) => return ReadResult::Error(err.to_string()),
+    };
+    let data_table = match read_txn.open_table(DATA_TABLE_DEF) {
+      Ok(table) => table,
+      Err(err) => return ReadResult::Error(err.to_string()),
+    };
+
+    match action {
+      ReadAction::Get { key, .. } => {
+        let value = match data_table.get(key.as_str()) {
+          Ok(value) => value.map(|v| v.value().to_vec()),
+          Err(err) => return ReadResult::Error(err.to_string()),
+        };
+        ReadResult::GetResult(value)
+      }
+      ReadAction::List { prefix } => {
+        let rows = match data_table.range::<&str>(..) {
+          Ok(rows) => rows,
+          Err(err) => return ReadResult::Error(err.to_string()),
+        };
+
+        let mut pairs = Vec::new();
+        for row in rows {
+          let (key, value) = match row {
+            Ok(row) => row,
+            Err(err) => return ReadResult::Error(err.to_string()),
+          };
+          let key = key.value().to_string();
+          if prefix.as_deref().is_none_or(|p| key.starts_with(p)) {
+            pairs.push((key, value.value().to_vec()));
+          }
+        }
+        ReadResult::ListResult(pairs)
+      }
+    }
   }
 
   /// This function applies a single `Action` (`Set`/`Delete`/`Patch`) to
@@ -103,12 +160,16 @@ impl Storage {
           .insert(key.as_str(), value.as_slice())
           .map_err(|err| StorageIOError::write_state_machine(&err))?;
 
+        let _ = self.events_tx.send(ItemStoreEvent::ItemCreated(key, value));
+
         Ok(ActionResult::Success)
       }
       Action::Delete { key } => {
         data_table
           .remove(key.as_str())
           .map_err(|err| StorageIOError::write_state_machine(&err))?;
+
+        let _ = self.events_tx.send(ItemStoreEvent::ItemRemoved(key));
 
         Ok(ActionResult::Success)
       }
@@ -127,6 +188,8 @@ impl Storage {
         data_table
           .insert(key.as_str(), value.as_slice())
           .map_err(|err| StorageIOError::write_state_machine(&err))?;
+
+        let _ = self.events_tx.send(ItemStoreEvent::ItemPatched(key, value));
 
         Ok(ActionResult::Success)
       }
@@ -923,5 +986,154 @@ mod tests {
     let (applied_log_id, _) =
       target.applied_state().await.expect("applied state");
     assert_eq!(applied_log_id, Some(log_id::<NodeId>(1, 1, 2)));
+  }
+
+  #[tokio::test]
+  async fn read_get_returns_value_for_present_key() {
+    let mut store = new_store();
+    store
+      .apply(vec![set_entry(1, "foo", b"bar")])
+      .await
+      .expect("apply set");
+
+    let result = store.read(ReadAction::Get {
+      key: "foo".to_string(),
+      allow_stale: false,
+    });
+
+    assert_eq!(result, ReadResult::GetResult(Some(b"bar".to_vec())));
+  }
+
+  #[test]
+  fn read_get_returns_none_for_missing_key() {
+    let store = new_store();
+
+    let result = store.read(ReadAction::Get {
+      key: "missing".to_string(),
+      allow_stale: false,
+    });
+
+    assert_eq!(result, ReadResult::GetResult(None));
+  }
+
+  #[tokio::test]
+  async fn read_list_returns_only_keys_matching_prefix() {
+    let mut store = new_store();
+    store
+      .apply(vec![
+        set_entry(1, "foo/a", b"1"),
+        set_entry(2, "foo/b", b"2"),
+        set_entry(3, "bar/c", b"3"),
+      ])
+      .await
+      .expect("apply batch");
+
+    let result = store.read(ReadAction::List {
+      prefix: Some("foo/".to_string()),
+    });
+
+    let ReadResult::ListResult(mut pairs) = result else {
+      panic!("expected ListResult");
+    };
+    pairs.sort();
+    assert_eq!(
+      pairs,
+      vec![
+        ("foo/a".to_string(), b"1".to_vec()),
+        ("foo/b".to_string(), b"2".to_vec()),
+      ]
+    );
+  }
+
+  #[tokio::test]
+  async fn read_list_without_prefix_returns_everything() {
+    let mut store = new_store();
+    store
+      .apply(vec![set_entry(1, "a", b"1"), set_entry(2, "b", b"2")])
+      .await
+      .expect("apply batch");
+
+    let result = store.read(ReadAction::List { prefix: None });
+
+    let ReadResult::ListResult(mut pairs) = result else {
+      panic!("expected ListResult");
+    };
+    pairs.sort();
+    assert_eq!(
+      pairs,
+      vec![
+        ("a".to_string(), b"1".to_vec()),
+        ("b".to_string(), b"2".to_vec()),
+      ]
+    );
+  }
+
+  #[tokio::test]
+  async fn apply_set_emits_item_created_event() {
+    let mut store = new_store();
+    let mut events = store.subscribe();
+
+    store
+      .apply(vec![set_entry(1, "foo", b"bar")])
+      .await
+      .expect("apply set");
+
+    assert_eq!(
+      events.recv().await.expect("event"),
+      ItemStoreEvent::ItemCreated("foo".to_string(), b"bar".to_vec())
+    );
+  }
+
+  #[tokio::test]
+  async fn apply_patch_emits_item_patched_event() {
+    let mut store = new_store();
+    store
+      .apply(vec![set_entry(1, "foo", b"bar")])
+      .await
+      .expect("apply set");
+    let mut events = store.subscribe();
+
+    store
+      .apply(vec![patch_entry(2, "foo", b"baz")])
+      .await
+      .expect("apply patch");
+
+    assert_eq!(
+      events.recv().await.expect("event"),
+      ItemStoreEvent::ItemPatched("foo".to_string(), b"baz".to_vec())
+    );
+  }
+
+  #[tokio::test]
+  async fn apply_delete_emits_item_removed_event() {
+    let mut store = new_store();
+    store
+      .apply(vec![set_entry(1, "foo", b"bar")])
+      .await
+      .expect("apply set");
+    let mut events = store.subscribe();
+
+    store
+      .apply(vec![delete_entry(2, "foo")])
+      .await
+      .expect("apply delete");
+
+    assert_eq!(
+      events.recv().await.expect("event"),
+      ItemStoreEvent::ItemRemoved("foo".to_string())
+    );
+  }
+
+  #[tokio::test]
+  async fn apply_patch_on_missing_key_emits_no_event() {
+    let mut store = new_store();
+    let mut events = store.subscribe();
+
+    store
+      .apply(vec![patch_entry(1, "missing", b"baz")])
+      .await
+      .expect("apply patch");
+
+    assert!(events.try_recv().is_err());
   }
 }

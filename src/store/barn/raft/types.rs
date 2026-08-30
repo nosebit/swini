@@ -35,17 +35,15 @@ impl Default for NodeRole {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct Node {
   pub id: u64,
-  pub name: String,
   pub api_addr: String,
   pub role: NodeRole,
   pub is_leader: bool,
 }
 
 impl SpreadNode for Node {
-  fn new(id: u64, name: String, api_addr: String) -> Self {
+  fn new(id: u64, api_addr: String) -> Self {
     Self {
       id,
-      name,
       api_addr,
       role: NodeRole::Voter,
       is_leader: false,
@@ -54,10 +52,6 @@ impl SpreadNode for Node {
 
   fn id(&self) -> u64 {
     self.id
-  }
-
-  fn name(&self) -> String {
-    self.name.clone()
   }
 
   fn api_addr(&self) -> String {

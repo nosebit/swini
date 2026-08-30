@@ -8,10 +8,12 @@ actually built.
 
 ## Command Rules
 
-- Implement **one task at a time**, in dependency order, and stop after each
-  for the user to review — unless the user explicitly asks to run several (or
-  all) tasks unattended. Even then, stop immediately if a task turns out to be
-  blocked, ambiguous, or needs scope `plan.md` doesn't cover.
+- By default, implement all eligible tasks back to back, in dependency order,
+  in one run — no per-task check-in. Only pause when a task turns out to be
+  blocked, ambiguous, or needs scope `plan.md` doesn't cover, or when Step 6
+  needs approval for a `plan.md` deviation diff. If the user asks for tighter
+  oversight instead (e.g. stop after every task, or after a specific one),
+  follow that.
 - Treat `plan.md`'s code snippets as the intended shape, not a copy/paste
   script — adapt them to what you actually find in the codebase, but track
   every place you depart from them (Step 5).
@@ -63,10 +65,13 @@ Read `goal.md`, `plan.md`, and `todo.md` from that folder.
 List the tasks in `todo.md` that are unchecked (`[ ]`) and whose dependencies
 are all checked (`[x]`).
 
-- If the user already asked for a specific task, use it.
-- Otherwise present the eligible tasks and ask which to run next, or whether
-  to run all of them back to back with per-task stops only on trouble (see
-  Command Rules).
+- If the user already asked for a specific task, or for tighter oversight
+  (see Command Rules), follow that instead of the default below.
+- Otherwise, pick the first eligible task in `todo.md`'s list order — it
+  already reflects the intended sequence. The first time this step runs in
+  a session, briefly state the full run before starting: which tasks are
+  eligible and the order you'll work through them. On every task, name which
+  one you're starting, then proceed — don't stop to ask.
 
 If every task is checked, skip to Step 7.
 
@@ -94,9 +99,6 @@ Note it as a deviation if any of the following happened:
 - The task's scope was split, merged, or changed during implementation.
 - New scope was discovered that isn't covered by any task in `todo.md`.
 
-Keep a running list of deviations across tasks in this session rather than
-reporting them one by one — batch them for Step 6.
-
 <!----->
 
 ### Step 6 — Reconcile Spec Docs
@@ -105,29 +107,31 @@ Flip the task's checkbox to `[x]` and write the update to `todo.md`. This is
 routine progress tracking and doesn't need its own confirmation beyond the
 task approval already given in Step 4.
 
-If Step 5 recorded deviations for this task, tell the user concretely what
-differed from the plan and ask: _"Should I update `plan.md` (and/or
-`todo.md`) to reflect what was actually built, leave the docs as-is, or
-something else?"_
+If Step 5 recorded deviations for this task, append them to
+`specs/<feature-slug>/wrap.md` as a new section, using
+`.mad/templates/wrap.md`'s structure (create the file from that template if
+it doesn't exist yet). This is also routine bookkeeping — no confirmation
+needed, and the file is never rewritten, only appended to.
 
-- If the user wants the docs updated, edit the relevant section of `plan.md`
-  (e.g. swap in the real snippet, note the added file) — treat this like any
-  other draft change: show the diff, get approval, then write.
-- If the user wants to note it without rewriting the original content, append
-  a short bullet under a `## Implementation Notes` section at the end of
-  `plan.md` describing the deviation instead.
+Then update the relevant section of `plan.md` to match what was actually
+built (e.g. swap in the real snippet, note the added file) — treat this like
+any other draft change: show the diff and get approval before writing. If the
+user rejects the change, leave `plan.md` as-is — the deviation is preserved
+in `wrap.md` either way, so nothing is lost. Record which way it went in the
+`wrap.md` entry (see the template).
 
 <!----->
 
 ### Step 7 — Repeat or Wrap Up
 
-If tasks remain and the user wants to continue, go back to Step 3.
+If tasks remain, go back to Step 3 automatically — don't stop to ask, unless
+the user has asked for tighter oversight (see Command Rules).
 
 Otherwise, summarize:
 
 - Tasks completed this session and what changed.
-- Any deviations reported and how they were resolved (doc updated / noted /
-  left as-is).
+- Any deviations recorded this session — see `specs/<feature-slug>/wrap.md`
+  for the full log — and whether `plan.md` was updated to match or left
+  as-is.
 - Remaining unchecked tasks, if any.
-- Suggested next step: open a PR, or — if `todo.md` is now fully checked —
-  update the spec's `status` to `done` in its frontmatter.
+- Suggested next step: open a PR.
