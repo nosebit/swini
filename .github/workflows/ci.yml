@@ -35,9 +35,9 @@ jobs:
       - name: Run Tests & Collect Coverage
         run: cargo llvm-cov nextest --lcov --output-path lcov.info
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
         with:
           file: lcov.info
-          fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
+          slug: nosebit/swini

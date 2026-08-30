@@ -11,9 +11,8 @@ pub enum SpreadStoreEvent<N> {
 /// This trait defines a single node of the spread store where
 /// the underlying storage is replicated for high availability
 pub trait SpreadNode: Clone + Send + Sync + 'static {
-  fn new(id: u64, name: String, api_addr: String) -> Self;
+  fn new(id: u64, api_addr: String) -> Self;
   fn id(&self) -> u64;
-  fn name(&self) -> String;
   fn api_addr(&self) -> String;
 }
 

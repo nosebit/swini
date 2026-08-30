@@ -59,18 +59,20 @@ state machine's `redb` database is opened separately by whoever constructs
   database at `db_path` with a `.raft` extension, constructs
   [`LogStorage`](storage.rs) and [`NetworkFactory`](network.rs), and calls
   `openraft::Raft::new(...)` with the state machine (`state: SM`) the caller
-  already built. The result is a live `Raft<C>` handle — the thing a future
-  Barn node actually holds and calls `.client_write(...)` /
-  `.client_read(...)` etc. on. Also re-exports `config::*` and `types::*`,
+  already built. The result is a live `Raft<C>` handle — the thing
+  [`Barn`](../mod.rs) holds and calls `.client_write(...)` /
+  `.ensure_linearizable(...)` etc. on. Also re-exports `config::*` and `types::*`,
   so callers just need `raft::create`, `raft::Config`, `raft::Node`.
   **Start here** to see how all the other pieces get assembled.
 
 - **[`config.rs`](config.rs)** — [`Config`](config.rs): the tunable knobs fed
   straight into `openraft::Config` (`heartbeat_interval`,
-  `election_timeout_min`/`max`), plus `join_addresses` — the peer addresses a
-  new node would contact to join an existing cluster. `join_addresses` isn't
-  consumed anywhere yet; joining a running cluster (as opposed to bootstrapping
-  a fresh one) is still open work.
+  `election_timeout_min`/`max`). Joining a running cluster (as opposed to
+  bootstrapping a fresh one) isn't config-driven here — it's
+  [`SpreadStore::node_add`](../mod.rs), called on an existing member, that
+  decides whether to bootstrap or add-and-promote a new node; a future
+  "node" module is expected to be what actually invokes it for a node
+  joining an existing cluster.
 
 - **[`types.rs`](types.rs)** — the identity/metadata types for a cluster
   *member*, as opposed to the application data it stores:
@@ -79,12 +81,14 @@ state machine's `redb` database is opened separately by whoever constructs
     `TypeConfig` instead), but documents what a node id *is*.
   - [`NodeRole`](types.rs): `Learner` (replicates data, doesn't vote) or
     `Voter` (counts toward quorum, participates in elections).
-  - [`Node`](types.rs): what the cluster knows about one member — id, name,
+  - [`Node`](types.rs): what the cluster knows about one member — id,
     `api_addr` (where [`network.rs`](network.rs) dials it), role, and
-    whether it's currently believed to be the leader. Implements
-    [`SpreadNode`](../../spread.rs) so Barn can eventually plug into the
-    generic `SpreadStore` trait. This is openraft's `RaftTypeConfig::Node`
-    type.
+    whether it's currently believed to be the leader. No `name` field —
+    name-to-id mapping is deferred to a future "node" module, so a
+    `SpreadNode`'s identity here is just `id` + `api_addr`. Implements
+    [`SpreadNode`](../../spread.rs), which [`Barn`](../mod.rs) plugs into
+    the generic `SpreadStore` trait through. This is openraft's
+    `RaftTypeConfig::Node` type.
 
 - **[`storage.rs`](storage.rs)** — [`LogStorage<C>`](storage.rs): the Raft
   log itself, in a `redb` database with two tables — log entries keyed by
@@ -112,8 +116,12 @@ state machine's `redb` database is opened separately by whoever constructs
   (`encode`/`decode` helpers) rather than mapped field-by-field onto a
   protobuf message, specifically so this wire contract never needs a
   hand-update just because an openraft request/response type gains a field.
-  **Important:** only the client side exists here — there is no `impl BarnApi
-  for ...` server anywhere in the codebase yet, so nothing currently answers
-  these RPCs in production. The tests in this file spin up a minimal mock
-  `BarnApi` server (over a real local TCP socket) purely to exercise this
-  client against something.
+  Only the client side lives here — the server side
+  (`impl BarnApi for BarnApiHandler`, answering these same RPCs by calling
+  straight into this node's `Raft` handle) lives in
+  [`src/api/barn.rs`](../../../api/README.md), since it's transport wiring
+  shared across whatever gRPC services swini exposes, not Raft-specific.
+  The tests in this file spin up a minimal mock `BarnApi` server (over a
+  real local TCP socket) purely to exercise this client in isolation; the
+  real server is exercised end-to-end by `store::barn`'s own multi-node
+  integration test.

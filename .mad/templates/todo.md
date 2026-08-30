@@ -1,6 +1,5 @@
 ---
 id: 0000
-status: draft # draft | in-progress | done
 plan: specs/{slug}/plan.md
 author: @{username}
 created: {datetime}

@@ -1,6 +1,5 @@
 ---
 id: 13
-status: draft # draft | proposed | accepted | done | rejected
 goal: specs/00013-barn-store/goal.md
 author: @brunomacf
 created: 2026-08-22
@@ -10,15 +9,15 @@ created: 2026-08-22
 
 Barn becomes a concrete `ClusterStore`: a `Barn` struct that owns a live
 `openraft::Raft<TypeConfig>` handle and a local `Storage` state machine,
-implements `Store`/`ItemStore`/`SpreadStore`/`ClusterStore`, and forwards
-raft's own membership/leader changes plus the state machine's applied
-writes as `StoreEvent`s. A new `src/api` module hosts a generic gRPC
-`Api` server; its first (and for now only) registered service is
-`BarnApiHandler`, which answers the `BarnApi` contract already defined in
-`proto/barn.proto` — the three raft transport RPCs, `ForwardWrite`/
-`ForwardRead` (used whenever a request lands on a node that isn't who it
-needs to be), and `NodeAdd` (cluster membership changes). See
-[goal.md](./goal.md) for the product requirements this design satisfies.
+implements `Store`/`ItemStore`/`SpreadStore`/`ClusterStore`, and forwards raft's
+own membership/leader changes plus the state machine's applied writes as
+`StoreEvent`s. A new `src/api` module hosts a generic gRPC `Api` server; its
+first (and for now only) registered service is `BarnApiHandler`, which answers
+the `BarnApi` contract already defined in `proto/barn.proto` — the three raft
+transport RPCs, `ForwardWrite`/ `ForwardRead` (used whenever a request lands on
+a node that isn't who it needs to be), and `NodeAdd` (cluster membership
+changes). See [goal.md](./goal.md) for the product requirements this design
+satisfies.
 
 ## Architecture
 
@@ -48,29 +47,30 @@ New/updated files:
 - `src/store/mod.rs` — add `pub use cluster::*;` (today `ClusterStore` is
   defined but never re-exported, so nothing outside `store::cluster` can
   actually name it).
-- `src/store/spread.rs` — `SpreadNode` drops `name`/`fn name()`; identity
-  is `id` + `api_addr` only (see below).
+- `src/store/spread.rs` — `SpreadNode` drops `name`/`fn name()`; identity is
+  `id` + `api_addr` only (see below).
 - `src/store/barn/raft/types.rs` — `Node` drops its `name` field to match.
-- `src/store/barn/config.rs` — `Config` gains `node_id`, `api_addr`,
-  `data_dir`.
-- `src/store/barn/raft/config.rs` — `join_addresses` is removed (see
-  Risks & Open Questions).
+- `src/store/barn/config.rs` — `Config` gains `node_id`, `api_addr`, `data_dir`.
+- `src/store/barn/raft/config.rs` — `join_addresses` is removed (see Risks &
+  Open Questions).
 - `proto/barn.proto` — `NodeAddReq` drops its `name` field to match.
 - `src/store/barn/events.rs` **(new)** — `Event`, Barn's concrete
   `ClusterStore::ClusterEvent` type.
-- `src/store/barn/storage.rs` — adds a local read path and applied-write
-  event emission.
+- `src/store/barn/storage.rs` — adds a local read path and applied-write event
+  emission.
 - `src/store/barn/mod.rs` — the `Barn` struct, `spawn`, and the trait
-  implementations; re-exports `Config`, `Event`, `Node`, `NodeRole`,
-  `Action`, `ActionResult`, `ReadAction`, `ReadResult` — `raft` and
-  `types` stay private submodules, never named from outside `store::barn`.
+  implementations; re-exports `Config`, `Event`, `Node`, `Action`,
+  `ActionResult`, `ReadAction`, `ReadResult` — `raft` and `types` stay private
+  submodules, never named from outside `store::barn`. (`NodeRole` stays
+  un-re-exported: nothing outside `store::barn` references it, and a
+  permanently-unused `pub use` fails this project's `clippy -D warnings` gate.
+  Trivial to add back once a real consumer needs it.)
 - `src/api/mod.rs` **(new)** — `Api`.
 - `src/api/barn.rs` **(new)** — `BarnApiHandler`.
 - `src/main.rs` — add `mod api;`.
-- READMEs: `src/store/barn/README.md` and `src/store/barn/raft/README.md`
-  need their "Current status" sections updated (Barn is no longer just
-  foundational pieces once this lands); `src/api/README.md` is a new
-  module README.
+- READMEs: `src/store/barn/README.md` and `src/store/barn/raft/README.md` need
+  their "Current status" sections updated (Barn is no longer just foundational
+  pieces once this lands); `src/api/README.md` is a new module README.
 
 ## Implementation Details
 
@@ -79,10 +79,9 @@ New/updated files:
 The concrete event type Barn emits — a flat enum, not a wrapper around
 `ItemStoreEvent`/`SpreadStoreEvent`. It still satisfies
 `ClusterStore::ClusterEvent`'s `TryInto<ItemStoreEvent<..>>` /
-`TryInto<SpreadStoreEvent<..>>` bounds: those conversions just reconstruct
-the generic wrapped shape from whichever flat variant matches, and fail
-for variants that don't (a `NodeAdded` isn't an `ItemStoreEvent`, and vice
-versa).
+`TryInto<SpreadStoreEvent<..>>` bounds: those conversions just reconstruct the
+generic wrapped shape from whichever flat variant matches, and fail for variants
+that don't (a `NodeAdded` isn't an `ItemStoreEvent`, and vice versa).
 
 ```rust
 use crate::store::{ItemStoreEvent, SpreadStoreEvent};
@@ -125,10 +124,10 @@ impl TryFrom<Event> for SpreadStoreEvent<raft::Node> {
 
 ### `SpreadNode` / `raft::Node` drop `name` (`src/store/spread.rs`, `src/store/barn/raft/types.rs`, `proto/barn.proto`)
 
-Name-to-id mapping is going to live in a future "node" module, not in
-Raft/Barn — a `SpreadNode`'s identity is just `id` + `api_addr` (where to
-reach it). No other `SpreadNode` implementation exists yet, so this is a
-clean change to the trait itself, not a Barn-only workaround.
+Name-to-id mapping is going to live in a future "node" module, not in Raft/Barn
+— a `SpreadNode`'s identity is just `id` + `api_addr` (where to reach it). No
+other `SpreadNode` implementation exists yet, so this is a clean change to the
+trait itself, not a Barn-only workaround.
 
 ```rust
 // src/store/spread.rs
@@ -187,14 +186,13 @@ pub struct Config {
 
 `Storage` gains a `pub(super) fn read` for answering `ReadAction`s directly
 against `DATA_TABLE_DEF`, and a broadcast channel so `apply_action` can emit
-`ItemStoreEvent`s the moment a write is durably applied — on every node,
-leader or follower, matching every other node's copy of the data.
-`pub(super)`, not `pub(crate)`: `storage` is a child module of `barn`, so
-plain module-private wouldn't even be visible to `Barn` in the parent
-`mod.rs` — but nothing outside `store::barn` ever touches `Storage`
-directly (`api::barn` only ever goes through `Barn::local_read`/
-`local_write`), so there's no reason for this to reach further than its
-immediate parent.
+`ItemStoreEvent`s the moment a write is durably applied — on every node, leader
+or follower, matching every other node's copy of the data. `pub(super)`, not
+`pub(crate)`: `storage` is a child module of `barn`, so plain module-private
+wouldn't even be visible to `Barn` in the parent `mod.rs` — but nothing outside
+`store::barn` ever touches `Storage` directly (`api::barn` only ever goes
+through `Barn::local_read`/ `local_write`), so there's no reason for this to
+reach further than its immediate parent.
 
 ```rust
 use crate::store::ItemStoreEvent;
@@ -225,8 +223,8 @@ impl Storage {
 ```
 
 `apply_action` sends on `events_tx` after each successful mutation
-(`Set`/`Patch` → `ItemCreated`/`ItemPatched`, `Delete` → `ItemRemoved`),
-mapping 1:1 from `Action` variants — no separate translation table needed.
+(`Set`/`Patch` → `ItemCreated`/`ItemPatched`, `Delete` → `ItemRemoved`), mapping
+1:1 from `Action` variants — no separate translation table needed.
 
 ### `raft::Config` (`src/store/barn/raft/config.rs`)
 
@@ -241,19 +239,17 @@ pub struct Config {
 
 `join_addresses` is removed (see Risks & Open Questions). `raft::create`'s
 signature is unaffected. The existing test helper in
-`raft/mod.rs::tests::test_config` drops its `join_addresses: Vec::new()`
-line.
+`raft/mod.rs::tests::test_config` drops its `join_addresses: Vec::new()` line.
 
 ### `Barn` (`src/store/barn/mod.rs`)
 
-`config`, `events`, `raft`, `storage`, and `types` all stay private
-submodules — nothing outside `store::barn` ever writes
-`store::barn::raft::..` or `store::barn::types::..`. Everything an outside
-caller (`api::barn`, and later the "node" module) needs is re-exported
-flat at the `barn::` level instead: `Node`/`NodeRole` so a caller can name
-the type `SpreadStore::node()`/`node_list()` return without knowing Barn
-happens to be raft-based internally, and `Action`/`ReadAction` for the
-forwarding RPC payloads.
+`config`, `events`, `raft`, `storage`, and `types` all stay private submodules —
+nothing outside `store::barn` ever writes `store::barn::raft::..` or
+`store::barn::types::..`. Everything an outside caller (`api::barn`, and later
+the "node" module) needs is re-exported flat at the `barn::` level instead:
+`Node` so a caller can name the type `SpreadStore::node()`/`node_list()` return
+without knowing Barn happens to be raft-based internally, and
+`Action`/`ReadAction` for the forwarding RPC payloads.
 
 ```rust
 mod config;
@@ -264,7 +260,7 @@ mod types;
 
 pub use config::Config;
 pub use events::Event;
-pub use raft::{Node, NodeRole};
+pub use raft::Node;
 pub use types::{Action, ActionResult, ReadAction, ReadResult};
 
 use crate::store::{ClusterStore, ItemStore, SpreadStore, Store, StoreEvent};
@@ -457,9 +453,9 @@ impl Barn {
   }
 
   async fn random_node(&self) -> Option<raft::Node> {
-    use rand::seq::SliceRandom;
+    use rand::seq::IndexedRandom;
     let nodes = self.node_cache.read().await;
-    nodes.choose(&mut rand::thread_rng()).cloned()
+    nodes.choose(&mut rand::rng()).cloned()
   }
 
   /// Watches raft's own metrics (membership/leader changes) and storage's
@@ -675,10 +671,10 @@ impl ClusterStore for Barn {
 
 ### `api::Api` (`src/api/mod.rs`)
 
-Deliberately thin: one field per registered gRPC service handler, all
-added to the same `tonic::transport::Server` in `listen`. Adding a second
-service later is one new field on `Api`, one new `Self::new` parameter,
-one more `.add_service(...)` call.
+Deliberately thin: one field per registered gRPC service handler, all added to
+the same `tonic::transport::Server` in `listen`. Adding a second service later
+is one new field on `Api`, one new `Self::new` parameter, one more
+`.add_service(...)` call.
 
 ```rust
 mod barn;
@@ -714,15 +710,14 @@ impl Api {
 
 The server side of `proto/barn.proto`. `append_entries`/`vote`/
 `install_snapshot` decode into openraft's own request types and call the
-matching inherent method on `Barn`'s raft handle — the exact
-encode/decode envelope (`serde_json` wrapped in `BarnMessage { payload }`)
-already established by `NetworkConnection::encode`/`decode` in
-`raft/network.rs`, and already exercised end-to-end by that file's own
-`MockBarnApi` test double, which this handler effectively replaces with a
-real implementation. `forward_write`/`forward_read` decode into
-`Action`/`ReadAction` and call straight into `Barn::local_write`/
-`local_read`. `node_add` decodes the typed `NodeAddReq` and calls
-`SpreadStore::node_add`.
+matching inherent method on `Barn`'s raft handle — the exact encode/decode
+envelope (`serde_json` wrapped in `BarnMessage { payload }`) already established
+by `NetworkConnection::encode`/`decode` in `raft/network.rs`, and already
+exercised end-to-end by that file's own `MockBarnApi` test double, which this
+handler effectively replaces with a real implementation.
+`forward_write`/`forward_read` decode into `Action`/`ReadAction` and call
+straight into `Barn::local_write`/ `local_read`. `node_add` decodes the typed
+`NodeAddReq` and calls `SpreadStore::node_add`.
 
 ```rust
 use crate::core::proto::barn::barn::barn_api_server::BarnApi;
@@ -789,121 +784,117 @@ above).
 
 ## Data Model / API Changes
 
-- `Config`: adds `node_id: u64` (plain `u64`, not `raft::NodeId` — they're
-  the same type, but `Config` is public and `raft` is a private submodule),
+- `Config`: adds `node_id: u64` (plain `u64`, not `raft::NodeId` — they're the
+  same type, but `Config` is public and `raft` is a private submodule),
   `api_addr`, `data_dir` (was just `{ raft: raft::Config }`).
-- `store::barn`'s public surface is now flat: `Barn`, `Config`, `Event`,
-  `Node`, `NodeRole`, `Action`, `ActionResult`, `ReadAction`, `ReadResult`.
-  Nothing outside the module ever writes `store::barn::raft::..` or
-  `store::barn::types::..` — `api::barn::BarnApiHandler` is the first
-  consumer of this and imports only the re-exported names.
+- `store::barn`'s public surface is now flat: `Barn`, `Config`, `Event`, `Node`,
+  `Action`, `ActionResult`, `ReadAction`, `ReadResult`. Nothing outside the
+  module ever writes `store::barn::raft::..` or `store::barn::types::..` —
+  `api::barn::BarnApiHandler` is the first consumer of this and imports only the
+  re-exported names.
 - `raft::Config`: drops `join_addresses`.
 - `SpreadNode` (`store::spread`) and `raft::Node` drop `name`/`fn name()`
-  entirely — identity is `id` + `api_addr`; name-to-id mapping is deferred
-  to a future "node" module. `NodeAddReq` (`proto/barn.proto`) drops
-  `name` to match.
-- New public type `barn::Event` (`store::barn::events::Event`) — a flat
-  enum (`ItemCreated`/`ItemPatched`/`ItemRemoved`/`NodeAdded`/
+  entirely — identity is `id` + `api_addr`; name-to-id mapping is deferred to a
+  future "node" module. `NodeAddReq` (`proto/barn.proto`) drops `name` to match.
+- New public type `barn::Event` (`store::barn::events::Event`) — a flat enum
+  (`ItemCreated`/`ItemPatched`/`ItemRemoved`/`NodeAdded`/
   `NodeRemoved`/`NodeChanged`), not a wrapper around
   `ItemStoreEvent`/`SpreadStoreEvent`.
-- New public method `Barn::stale_get(&self, key: &str) -> Result<Option<Vec<u8>>, Box<dyn Error>>`
+- New public method
+  `Barn::stale_get(&self, key: &str) -> Result<Option<Vec<u8>>, Box<dyn Error>>`
   — not part of any trait (`ItemStore` only has consistent `get`), called
   directly on a `Barn`/`Arc<Barn>` handle.
-- New crate dependency: `rand` (random peer selection for `stale_get`).
+- New crate dependency: `rand` (random peer selection for `stale_get`) —
+  `0.10.2`, whose `rand::rng()`/`IndexedRandom` replace the older
+  `rand::thread_rng()`/`SliceRandom` API.
 - `src/store/mod.rs` re-exports `ClusterStore` for the first time.
 
 ## Testing Strategy
 
-- Unit tests for `Storage::read` (`Get`/`List`, present/absent/prefix
-  cases) and for `Storage`'s applied-write event emission
-  (Set→ItemCreated, Patch→ItemPatched, Delete→ItemRemoved), alongside the
-  existing `apply`/snapshot tests in `storage.rs`.
-- Unit tests for `Barn::node_add`'s two branches: bootstrapping an empty
-  cluster via `initialize` vs. add-learner-then-promote on a non-empty
-  one, using the same in-memory `redb` + real `openraft::Raft` pattern
-  `raft/mod.rs`'s existing tests already use.
+- Unit tests for `Storage::read` (`Get`/`List`, present/absent/prefix cases) and
+  for `Storage`'s applied-write event emission (Set→ItemCreated,
+  Patch→ItemPatched, Delete→ItemRemoved), alongside the existing
+  `apply`/snapshot tests in `storage.rs`.
+- Unit tests for `Barn::node_add`'s two branches: bootstrapping an empty cluster
+  via `initialize` vs. add-learner-then-promote on a non-empty one, using the
+  same in-memory `redb` + real `openraft::Raft` pattern `raft/mod.rs`'s existing
+  tests already use.
 - Unit tests for leader-aware routing: `get`/`set` served locally when
-  `is_leader()` is true, and the "no known leader yet" error path
-  when membership is empty.
+  `is_leader()` is true, and the "no known leader yet" error path when
+  membership is empty.
 - Integration tests (real `Api::listen` over `127.0.0.1:0`, following the
-  `spawn_mock_server` pattern already in `raft/network.rs`'s tests, but
-  with a real `BarnApiHandler` instead of `MockBarnApi`) covering: two or
-  three real `Barn` nodes formed into a cluster via `node_add`; a write on
-  one node readable from another through `get`; `stale_get` returning a
-  follower's local (possibly lagging) view; a `NodeRemoved`/`NodeAdded`/
-  item event actually arriving on a subscriber. These live as
-  `#[cfg(test)]` modules near the code they exercise (`store/barn/mod.rs`),
-  matching how `raft/mod.rs` and `raft/network.rs` already test real
-  networked/raft behavior — this feature adds no CLI-facing behavior, so
-  it doesn't need `assert_cmd`-based e2e tests under `tests/` per the
-  project's testing rules.
+  `spawn_mock_server` pattern already in `raft/network.rs`'s tests, but with a
+  real `BarnApiHandler` instead of `MockBarnApi`) covering: two or three real
+  `Barn` nodes formed into a cluster via `node_add`; a write on one node
+  readable from another through `get`; `stale_get` returning a follower's local
+  (possibly lagging) view; a `NodeRemoved`/`NodeAdded`/ item event actually
+  arriving on a subscriber. These live as `#[cfg(test)]` modules near the code
+  they exercise (`store/barn/mod.rs`), matching how `raft/mod.rs` and
+  `raft/network.rs` already test real networked/raft behavior — this feature
+  adds no CLI-facing behavior, so it doesn't need `assert_cmd`-based e2e tests
+  under `tests/` per the project's testing rules.
 
 ## Risks & Open Questions
 
-- **Single-hop forwarding, no retry.** `set`/`delete`/`get` resolve the
-  leader once (from `node_cache`) and make exactly one forwarding hop. If
-  leadership changes in the gap between that check and the forwarded RPC
-  landing, the call fails with an error rather than retrying against the
-  new leader. Acceptable for this plan; an automatic retry loop is not
-  included.
-- **`node_cache` lags live raft metrics by up to one event-loop tick.**
-  Every read path (`is_leader`, `current_leader_node`, `random_node`,
-  `node`, `node_list`) reads `node_cache`, which `event_forwarder_start`
-  refreshes asynchronously in its own spawned task whenever raft's metrics
-  change — not synchronously inside `client_write`/`ensure_linearizable`
-  themselves. So there's a brief window right after a leadership or
-  membership change where `node_cache` can still reflect the previous
-  state. `spawn` seeds the cache synchronously from the first metrics
-  snapshot so it's never simply empty, but it isn't guaranteed
-  instantaneously fresh either. Combined with the single-hop/no-retry
-  point above, a request landing exactly in that window fails and relies
-  on the caller retrying, rather than blocking for a guaranteed-current
-  answer.
-- **`join_addresses` removal.** Per discussion, cluster join is being
-  moved entirely to a future "node" module (a `join` RPC that itself
-  calls `SpreadStore::node_add` on an existing member) rather than being
-  driven by config on the joining node. This plan removes the
-  now-unnecessary `join_addresses` field from `raft::Config` as part of
-  implementing `node_add`. If that future module ends up needing
-  something more than what `node_add` already exposes, that's new,
-  separate work.
-- **`node_cache` is designed for a future worker-mode `Barn` this plan
-  doesn't build — and that variant can never have a real raft handle at
-  all.** A Swini worker node isn't a raft participant, so a `Barn` spawned
-  there has no `openraft::Raft<TypeConfig>` to call `.metrics()` on in the
-  first place — `event_forwarder_start`, `local_read`/`local_write`,
-  `node_add`/`node_remove`, and the raft-transport RPCs `BarnApiHandler`
-  serves (`append_entries`/`vote`/`install_snapshot`) are all meaningless
-  for it. `node_cache` is the *only* thing such an instance could ever be
-  driven from. The envisioned flow (not part of this plan, captured here
-  so it isn't lost): the daemon on a worker node joins via a
-  `join_addresses`-style config pointing at an existing cluster member,
-  gets back the current Barn node list in the join response, and calls
-  `node_cache_set` with it — only at that point can the worker's `Barn`
-  actually forward anything. Since nothing here keeps that cache current
-  afterward, the Swini primary (the Barn leader) needs to push topology
-  changes to every worker's `node_cache_set` whenever Barn membership
-  changes, or a worker's view goes stale forever. Concretely, this means
+- **Single-hop forwarding, no retry.** `set`/`delete`/`get` resolve the leader
+  once (from `node_cache`) and make exactly one forwarding hop. If leadership
+  changes in the gap between that check and the forwarded RPC landing, the call
+  fails with an error rather than retrying against the new leader. Acceptable
+  for this plan; an automatic retry loop is not included.
+- **`node_cache` lags live raft metrics by up to one event-loop tick.** Every
+  read path (`is_leader`, `current_leader_node`, `random_node`, `node`,
+  `node_list`) reads `node_cache`, which `event_forwarder_start` refreshes
+  asynchronously in its own spawned task whenever raft's metrics change — not
+  synchronously inside `client_write`/`ensure_linearizable` themselves. So
+  there's a brief window right after a leadership or membership change where
+  `node_cache` can still reflect the previous state. `spawn` seeds the cache
+  synchronously from the first metrics snapshot so it's never simply empty, but
+  it isn't guaranteed instantaneously fresh either. Combined with the
+  single-hop/no-retry point above, a request landing exactly in that window
+  fails and relies on the caller retrying, rather than blocking for a
+  guaranteed-current answer.
+- **`join_addresses` removal.** Per discussion, cluster join is being moved
+  entirely to a future "node" module (a `join` RPC that itself calls
+  `SpreadStore::node_add` on an existing member) rather than being driven by
+  config on the joining node. This plan removes the now-unnecessary
+  `join_addresses` field from `raft::Config` as part of implementing `node_add`.
+  If that future module ends up needing something more than what `node_add`
+  already exposes, that's new, separate work.
+- **`node_cache` is designed for a future worker-mode `Barn` this plan doesn't
+  build — and that variant can never have a real raft handle at all.** A Swini
+  worker node isn't a raft participant, so a `Barn` spawned there has no
+  `openraft::Raft<TypeConfig>` to call `.metrics()` on in the first place —
+  `event_forwarder_start`, `local_read`/`local_write`, `node_add`/`node_remove`,
+  and the raft-transport RPCs `BarnApiHandler` serves
+  (`append_entries`/`vote`/`install_snapshot`) are all meaningless for it.
+  `node_cache` is the _only_ thing such an instance could ever be driven from.
+  The envisioned flow (not part of this plan, captured here so it isn't lost):
+  the daemon on a worker node joins via a `join_addresses`-style config pointing
+  at an existing cluster member, gets back the current Barn node list in the
+  join response, and calls `node_cache_set` with it — only at that point can the
+  worker's `Barn` actually forward anything. Since nothing here keeps that cache
+  current afterward, the Swini primary (the Barn leader) needs to push topology
+  changes to every worker's `node_cache_set` whenever Barn membership changes,
+  or a worker's view goes stale forever. Concretely, this means
   `Barn.raft: openraft::Raft<TypeConfig>` almost certainly needs to become
-  `Option<..>` (or the worker variant needs to be a different type
-  altogether) when that work happens — a real design question for that
-  future spec, not resolved here. This plan only builds the
-  raft-participating constructor; the worker-mode one is out of scope (see
-  Out of Scope) — but `node_cache_set`'s existence and every read path's
-  reliance on `node_cache` already anticipate it.
+  `Option<..>` (or the worker variant needs to be a different type altogether)
+  when that work happens — a real design question for that future spec, not
+  resolved here. This plan only builds the raft-participating constructor; the
+  worker-mode one is out of scope (see Out of Scope) — but `node_cache_set`'s
+  existence and every read path's reliance on `node_cache` already anticipate
+  it.
 
 ## Out of Scope
 
 - Wiring `Barn::spawn`/`Api::listen` into daemon startup (per goal.md).
 - A "worker" Barn variant with no local storage that always forwards
-  (`node_cache_set`-driven) — construction path is future work; this
-  plan's request-routing logic is written to already be compatible with
-  it once it exists. No `SpreadStore` trait change is needed for that
-  variant's `node()` to report "I'm not a Barn node" — it already returns
-  `Result<Option<Self::Node>, _>`, so returning `Ok(None)` is already
-  supported.
-- Automatic retry-against-new-leader when a forwarded write/read's
-  target turns out to be stale.
+  (`node_cache_set`-driven) — construction path is future work; this plan's
+  request-routing logic is written to already be compatible with it once it
+  exists. No `SpreadStore` trait change is needed for that variant's `node()` to
+  report "I'm not a Barn node" — it already returns
+  `Result<Option<Self::Node>, _>`, so returning `Ok(None)` is already supported.
+- Automatic retry-against-new-leader when a forwarded write/read's target turns
+  out to be stale.
 - TLS/auth for the `BarnApi` gRPC transport.
-- Exposing `Action::Patch` through a public `Barn` API — `ItemStore` has
-  no `patch` method, and `ItemStore::set` already covers create-or-replace.
+- Exposing `Action::Patch` through a public `Barn` API — `ItemStore` has no
+  `patch` method, and `ItemStore::set` already covers create-or-replace.

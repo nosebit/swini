@@ -1,6 +1,5 @@
 ---
 id: 0000
-status: draft # draft | proposed | accepted | done | rejected
 goal: specs/{slug}/goal.md
 author: @{username}
 created: {datetime}
