@@ -3,4 +3,5 @@
 // significantly speeds up compilation time (by only linking dependencies once)
 // and visually groups all tests under `swini::e2e` in the test runner.
 
+mod cluster;
 mod daemon;

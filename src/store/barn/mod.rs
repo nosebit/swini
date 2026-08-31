@@ -9,6 +9,9 @@ pub use events::Event;
 pub use raft::Node;
 pub use types::{Action, ActionResult, ReadAction, ReadResult};
 
+#[cfg(test)]
+pub use raft::Config as RaftConfig;
+
 use crate::core::proto::barn::barn::barn_api_client::BarnApiClient;
 use crate::core::proto::barn::barn::BarnMessage;
 use crate::store::{

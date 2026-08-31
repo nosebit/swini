@@ -60,4 +60,46 @@ pub struct Node {
 
   /// The daemon api address on this node.
   pub api_addr: String,
+
+  /// ISO 8601 / RFC 3339 timestamp when the node joined the cluster.
+  pub joined_at: String,
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn default_node_role_is_worker() {
+    assert_eq!(NodeRole::default(), NodeRole::Worker);
+  }
+
+  #[test]
+  fn node_serialization_roundtrip() {
+    let node = Node {
+      id: 42,
+      name: "worker-1".to_string(),
+      tags: vec!["zone-a".to_string()],
+      cpu_total: 8000,
+      memory_total: 16000,
+      cpu_reserved: 1000,
+      memory_reserved: 2000,
+      yardable_cpu: 7000,
+      yardable_memory: 14000,
+      running_piglets: vec!["pig-1".to_string()],
+      roles: vec![NodeRole::Server, NodeRole::Worker],
+      api_addr: "127.0.0.1:7440".to_string(),
+      joined_at: "2026-08-31T12:00:00Z".to_string(),
+    };
+
+    let serialized = serde_json::to_string(&node).expect("serialize");
+    let deserialized: Node =
+      serde_json::from_str(&serialized).expect("deserialize");
+
+    assert_eq!(deserialized.id, 42);
+    assert_eq!(deserialized.name, "worker-1");
+    assert_eq!(deserialized.roles, vec![NodeRole::Server, NodeRole::Worker]);
+    assert_eq!(deserialized.api_addr, "127.0.0.1:7440");
+    assert_eq!(deserialized.joined_at, "2026-08-31T12:00:00Z");
+  }
 }
