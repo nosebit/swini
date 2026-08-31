@@ -1,6 +1,9 @@
 mod api;
 mod cli;
+mod cluster;
 mod core;
+mod daemon;
+mod node;
 mod store;
 
 use std::error::Error;

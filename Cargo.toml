@@ -13,6 +13,7 @@ module_inception = "allow"
 
 [dependencies]
 async-trait = "0.1.92"
+chrono = { version = "0.4.44", features = ["serde"] }
 clap = { version = "4.6.6", features = ["derive"] }
 openraft = { version = "0.9.25", features = ["serde", "storage-v2"] }
 prost = "0.14.4"

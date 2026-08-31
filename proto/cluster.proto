@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package swini.cluster;
+
+service ClusterApi {
+  rpc Join(JoinReq) returns (JoinRes);
+  rpc Status(StatusReq) returns (StatusRes);
+}
+
+message JoinReq {
+  uint64 id = 1;
+  string name = 2;
+  string api_addr = 3;
+  repeated string roles = 4;
+  repeated string tags = 5;
+}
+
+message JoinRes {
+  repeated Node server_nodes = 1;
+}
+
+message StatusReq {}
+
+message StatusRes {
+  repeated Node nodes = 1;
+  uint64 primary_id = 2;
+}
+
+message Node {
+  uint64 id = 1;
+  string name = 2;
+  string api_addr = 3;
+  repeated string roles = 4;
+  repeated string tags = 5;
+  string joined_at = 6;
+  bool is_primary = 7;
+}

@@ -3,3 +3,4 @@
 //! `build.rs` and `proto/`).
 
 pub mod barn;
+pub mod cluster;
