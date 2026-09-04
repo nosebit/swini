@@ -1,0 +1,10 @@
+name: swini-2
+addr: 127.0.0.1:7442
+data_dir: ./sandbox/.data/swini-2
+roles:
+  - server
+tags:
+  - zone-a
+  - secondary
+join_addresses:
+  - 127.0.0.1:7441

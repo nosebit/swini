@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package swini.cluster;
+package swini.plot;
 
-service ClusterApi {
+service PlotApi {
   rpc Join(JoinReq) returns (JoinRes);
   rpc Status(StatusReq) returns (StatusRes);
 }
@@ -10,26 +10,26 @@ service ClusterApi {
 message JoinReq {
   uint64 id = 1;
   string name = 2;
-  string api_addr = 3;
+  string addr = 3;
   repeated string roles = 4;
   repeated string tags = 5;
 }
 
 message JoinRes {
-  repeated Node server_nodes = 1;
+  repeated Plot server_plots = 1;
 }
 
 message StatusReq {}
 
 message StatusRes {
-  repeated Node nodes = 1;
+  repeated Plot plots = 1;
   uint64 primary_id = 2;
 }
 
-message Node {
+message Plot {
   uint64 id = 1;
   string name = 2;
-  string api_addr = 3;
+  string addr = 3;
   repeated string roles = 4;
   repeated string tags = 5;
   string joined_at = 6;

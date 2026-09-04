@@ -1,0 +1,8 @@
+name: swini-1
+addr: 127.0.0.1:7441
+data_dir: ./sandbox/.data/swini-1
+roles:
+  - server
+tags:
+  - zone-a
+  - primary

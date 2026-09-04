@@ -36,10 +36,42 @@ module README before modifying code in that module.
 
 **Comments:**
 
-- MUST add `///` doc comments to all public functions, types, traits, and
-  modules.
-- SHOULD add inline `//` comments to explain non-obvious logic, edge cases, or
-  intentional design decisions that a reviewer might question.
+- **Module / File Headers (`//!`):**
+  - MUST start every non-trivial `.rs` file with an inner doc comment (`//!`)
+    explaining:
+    1. The single responsibility of this file.
+    2. How it fits into the broader subsystem or orchestrator workflow.
+    3. Key architectural assumptions, lifecycle, or concurrency invariants.
+
+- **Item Docs (`///`):**
+  - MUST add `///` doc comments to all `pub` and non-trivial private functions,
+    types, and traits.
+  - MUST describe the **intent** and **contract**, not restate the function
+    signature.
+  - MUST include an `# Errors` section if the function returns `Result`,
+    detailing specific failure conditions.
+  - MUST document safety, panics, or lock-ordering expectations where
+    applicable.
+  - MUST NOT write redundant or tautological comments:
+
+    ```rust
+    // Bad (tautological — adds no new information):
+    /// Returns the node address.
+    pub fn node_address(&self) -> &str { ... }
+
+    // Good (intent, purpose, and context):
+    /// Returns the canonical gossip address used by peer nodes to establish Raft RPC connections.
+    pub fn node_address(&self) -> &str { ... }
+    ```
+
+- **Inline Logic Comments (`//`):**
+  - MUST explain **"Why"** a decision was made rather than **"What"** the code
+    is doing.
+  - MUST label multi-step flows (e.g.
+    `// Step 1: Drain buffer before leader election`).
+  - MUST document non-obvious workarounds, edge-case handling, or explicit
+    fallbacks.
+
 - Code MUST be readable by a human reviewer who did not write it. If a block of
   code requires context to understand, add a comment explaining the context.
 

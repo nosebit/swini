@@ -1,38 +1,98 @@
-//! This module is responsible for setting up the telemetry used throughout the
-//! code. We currently use the tracing crate to allow logging and execution
-//! tracing.
-use tracing_subscriber::EnvFilter;
+//! Telemetry, distributed tracing, and non-blocking rolling file logging for
+//! Swini.
+//!
+//! Configures a unified `tracing` subscriber registry that supports:
+//! - Daily rolling file logs writing to `{data_dir}/logs/regent.log`.
+//! - Non-blocking asynchronous writes via `tracing-appender`.
+//! - Conditional stdout console logging when running in the foreground.
+//! - Dynamic log level filtering controlled by `SWINI_LOG_LEVEL` (fallback
+//!   `RUST_LOG`).
 
-/// This function initializes the telemetry.
-pub fn init() {
-  // Build a subscriber configured for formatting text to the console
-  tracing_subscriber::fmt()
-    // Read the RUST_LOG environment variable to determine the log level.
-    // If the variable isn't set, default to the "info" level.
-    .with_env_filter(
-      EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info")),
+use std::path::Path;
+use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{fmt, EnvFilter, Layer};
+
+/// Guard maintaining the lifecycle of the non-blocking background logging
+/// worker thread.
+///
+/// Ensures buffered log entries are flushed to disk before the application
+/// terminates.
+pub struct TelemetryGuard {
+  _file_guard: Option<WorkerGuard>,
+}
+
+/// Initializes global telemetry and logging according to execution mode.
+///
+/// # Arguments
+/// - `console_enabled`: Set to `true` when running in the foreground to stream
+///   formatted logs to stdout.
+/// - `log_dir`: Optional directory path where `regent.log` daily files will be
+///   stored.
+/// - `_log_prefix`: Optional prefix name for log files (defaults to
+///   `regent.log`).
+pub fn init(
+  console_enabled: bool,
+  log_dir: Option<&Path>,
+  _log_prefix: Option<&str>,
+) -> TelemetryGuard {
+  let filter_str = std::env::var("SWINI_LOG_LEVEL")
+    .or_else(|_| std::env::var("RUST_LOG"))
+    .unwrap_or_else(|_| "info,openraft=warn".to_string());
+
+  let env_filter = EnvFilter::new(filter_str);
+
+  let mut file_guard = None;
+  let file_layer = if let Some(dir) = log_dir {
+    let _ = std::fs::create_dir_all(dir);
+    let file_appender = tracing_appender::rolling::daily(dir, "regent.log");
+    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+    file_guard = Some(guard);
+
+    Some(
+      fmt::layer()
+        .with_ansi(false)
+        .with_writer(non_blocking)
+        .with_target(true)
+        .with_filter(EnvFilter::new("info,openraft=warn")),
     )
-    // Install this subscriber as the global default for the entire app.
-    // We use `try_init().ok()` instead of `init()` so that if this is called
-    // multiple times (e.g., by different unit tests running in parallel),
-    // it won't panic.
-    .try_init()
-    .ok();
+  } else {
+    None
+  };
+
+  let console_layer = if console_enabled {
+    Some(fmt::layer().with_ansi(true).with_target(false))
+  } else {
+    None
+  };
+
+  let _ = tracing_subscriber::registry()
+    .with(env_filter)
+    .with(file_layer)
+    .with(console_layer)
+    .try_init();
+
+  TelemetryGuard {
+    _file_guard: file_guard,
+  }
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
+  use tempfile::tempdir;
 
   #[test]
   fn test_telemetry_initialization() {
-    // Calling it once should succeed and set up the telemetry.
-    init();
+    let _guard = init(true, None, None);
+    tracing::info!("test info message");
+  }
 
-    // Calling it a second time should gracefully do nothing because we used
-    // `try_init().ok()`, ensuring our unit tests won't panic if they share
-    // the same process!
-    init();
+  #[test]
+  fn test_file_logging_initialization() {
+    let dir = tempdir().unwrap();
+    let _guard = init(false, Some(dir.path()), Some("regent"));
+    tracing::info!("test file info message");
   }
 }

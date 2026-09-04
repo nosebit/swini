@@ -1,2 +1,8 @@
 target
 .DS_Store
+
+# Sandbox runtime data and temporary directories
+.data/
+.tmp/
+sandbox/.data/
+sandbox/.tmp/
