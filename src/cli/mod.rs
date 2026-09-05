@@ -10,6 +10,7 @@ mod regent;
 
 pub(crate) use regent::Command as RegentCommand;
 
+use crate::croft::config;
 use clap::{Parser, Subcommand};
 use std::error::Error;
 use std::path::PathBuf;
@@ -36,7 +37,7 @@ pub enum Command {
 /// 1. From `SWINI_ADDR` environment variable if set (including `local://{name}`
 ///    URIs).
 /// 2. By inspecting active Regent metadata in
-///    `~/.swini/regents/{name}/state.json`.
+///    `~/.swini/crofts/{name}/regent.json`.
 /// 3. Falling back to default `http://127.0.0.1:7440`.
 pub fn resolve_api_url(
   regent_name: Option<&str>,
@@ -51,12 +52,12 @@ fn resolve_api_url_internal(
 ) -> Result<String, Box<dyn Error>> {
   let find_state = |name: &str| -> Option<crate::regent::RegentState> {
     let candidates = [
-      crate::core::config::default_data_dir(name),
+      config::default_data_dir(name),
       PathBuf::from("sandbox/.data").join(name),
       PathBuf::from(".data").join(name),
     ];
-    for dir in candidates {
-      if let Ok(state) = crate::regent::RegentState::load(&dir) {
+    for dir in &candidates {
+      if let Ok(state) = crate::regent::RegentState::load(dir) {
         return Some(state);
       }
     }
@@ -91,7 +92,7 @@ fn resolve_api_url_internal(
     }
   }
 
-  Ok(format!("http://{}", crate::core::config::DEFAULT_ADDR))
+  Ok(format!("http://{}", config::DEFAULT_ADDR))
 }
 
 /// Dispatches pre-parsed CLI commands inside an active async runtime.
@@ -198,7 +199,7 @@ mod tests {
       pid: std::process::id(),
       detached: false,
       started_at: "2026-09-03T15:00:00Z".to_string(),
-      config: crate::core::Config {
+      config: crate::croft::Config {
         name: "test-regent".to_string(),
         addr: "127.0.0.1:7555".parse().unwrap(),
         data_dir: dir.path().to_path_buf(),

@@ -21,6 +21,12 @@ pub struct Gate {
   state: Arc<Mutex<Option<GateState>>>,
 }
 
+impl std::fmt::Debug for Gate {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("Gate").finish()
+  }
+}
+
 impl Default for Gate {
   fn default() -> Self {
     Self::new()
@@ -68,6 +74,10 @@ impl Gate {
 
   /// Starts listening on the specified socket address, serving all registered
   /// gRPC services.
+  ///
+  /// # Errors
+  /// Returns an error if the server fails to bind or encountered network errors
+  /// while serving.
   pub async fn listen(&self, addr: SocketAddr) -> Result<(), Box<dyn Error>> {
     let state = self
       .state
@@ -85,9 +95,10 @@ impl Gate {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::core::proto::plot::plot_api_server::PlotApiServer;
-  use crate::plot::clerk::Api as PlotApiHandler;
-  use crate::plot::Clerk;
+  use crate::core::proto::croft::croft_api_server::CroftApiServer;
+  use crate::croft::clerk::Api as CroftApiHandler;
+  use crate::croft::clerk::Clerk;
+  use crate::croft::Config;
 
   #[tokio::test]
   async fn gate_initializes_and_mounts_services() {
@@ -95,7 +106,7 @@ mod tests {
     assert!(gate.state.lock().unwrap().is_some());
 
     let dir = tempfile::tempdir().unwrap();
-    let config = crate::core::Config {
+    let config = Config {
       addr: "127.0.0.1:0".parse().unwrap(),
       data_dir: dir.path().to_path_buf(),
       ..Default::default()
@@ -103,12 +114,14 @@ mod tests {
     let croft =
       std::sync::Arc::new(crate::croft::Croft::spawn(&config).await.unwrap());
     let clerk = Clerk::new(croft.clone());
-    let handler = PlotApiHandler::new(clerk);
+    let handler = CroftApiHandler::new(clerk);
 
     // Add first service (transition Builder -> Router)
-    gate.add(PlotApiServer::new(handler));
+    gate.add(CroftApiServer::new(handler));
     // Add second service (Router -> Router)
-    gate.add(croft.barn.api());
+    if let Some(ref barn) = croft.barn {
+      gate.add(barn.api());
+    }
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let bound_addr = listener.local_addr().unwrap();

@@ -1,7 +1,6 @@
 mod cli;
 mod core;
 mod croft;
-mod plot;
 mod regent;
 mod store;
 

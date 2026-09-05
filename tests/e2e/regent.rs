@@ -38,10 +38,10 @@ fn regent_stop_not_running_reports_informative_error() {
     .env("HOME", temp_home.path())
     .arg("regent")
     .arg("stop")
-    .arg("nonexistent-plot");
+    .arg("nonexistent-croft");
 
   cmd.assert().failure().stderr(predicate::str::contains(
-    "Regent 'nonexistent-plot' is not running",
+    "Regent 'nonexistent-croft' is not running",
   ));
 }
 
@@ -69,7 +69,7 @@ fn regent_detached_lifecycle_start_status_stop() {
   let port = 10000 + (rand::random::<u16>() % 50000);
   let yaml_content = format!(
     r#"
-name: e2e-plot
+name: e2e-croft
 addr: "127.0.0.1:{port}"
 roles:
   - server
@@ -90,7 +90,7 @@ roles:
 
   start_cmd.assert().success();
 
-  // Wait briefly for the daemon to start and write state.json
+  // Wait briefly for the daemon to start and write regent.json
   std::thread::sleep(Duration::from_millis(500));
 
   // 2. Query status
@@ -103,7 +103,7 @@ roles:
   status_cmd
     .assert()
     .success()
-    .stdout(predicate::str::contains("e2e-plot"))
+    .stdout(predicate::str::contains("e2e-croft"))
     .stdout(predicate::str::contains("Running"));
 
   // 3. Stop Regent
@@ -112,7 +112,7 @@ roles:
     .env("HOME", temp_home.path())
     .arg("regent")
     .arg("stop")
-    .arg("e2e-plot");
+    .arg("e2e-croft");
 
   stop_cmd
     .assert()

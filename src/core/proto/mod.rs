@@ -5,4 +5,4 @@
 //! interfaces.
 
 pub mod barn;
-pub mod plot;
+pub mod croft;
