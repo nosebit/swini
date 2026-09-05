@@ -1,3 +1,4 @@
+pub mod api;
 mod config;
 mod events;
 mod raft;
@@ -9,10 +10,8 @@ pub use events::Event;
 pub use raft::Node;
 pub use types::{Action, ActionResult, ReadAction, ReadResult};
 
-#[cfg(test)]
-pub use raft::Config as RaftConfig;
-
 use crate::core::proto::barn::barn::barn_api_client::BarnApiClient;
+use crate::core::proto::barn::barn::barn_api_server::BarnApiServer;
 use crate::core::proto::barn::barn::BarnMessage;
 use crate::store::{
   ClusterStore, ItemStore, ItemStoreEvent, SpreadNode, SpreadStore, Store,
@@ -41,25 +40,38 @@ pub struct Barn {
 }
 
 impl Barn {
+  /// Exposes the gRPC [`BarnApiServer`] service instance for this Barn.
+  pub fn api(&self) -> BarnApiServer<api::Api> {
+    api::Api::new(self.clone()).into_server()
+  }
+
   /// Opens local storage, brings up the raft engine on top of it, and
   /// starts the background task that turns raft/storage activity into
   /// `Event`s. Does not join or bootstrap any cluster membership — that's
   /// `SpreadStore::node_add`'s job, called by whoever is orchestrating
   /// cluster formation.
-  pub async fn spawn(config: Config) -> Result<Self, Box<dyn Error>> {
+  pub async fn spawn(
+    gate: &crate::croft::Gate,
+    config: Config,
+  ) -> Result<Self, Box<dyn Error>> {
+    std::fs::create_dir_all(&config.data_dir)?;
     let data_db =
       Arc::new(redb::Database::create(config.data_dir.join("barn.data"))?);
     let storage = Storage::new(data_db)?;
 
     let raft = raft::create::<TypeConfig, Storage>(
-      config.node_id,
-      &config.raft,
+      config.id,
+      &raft::Config {
+        heartbeat_interval: config.heartbeat_interval,
+        election_timeout_min: config.election_timeout_min,
+        election_timeout_max: config.election_timeout_max,
+      },
       config.data_dir.join("barn"),
       storage.clone(),
     )
     .await?;
 
-    let self_node = raft::Node::new(config.node_id, config.api_addr);
+    let self_node = raft::Node::new(config.id, config.addr);
     let (events_tx, _) = broadcast::channel(1024);
     let node_cache = Arc::new(RwLock::new(Self::nodes_from_metrics(
       &raft.metrics().borrow(),
@@ -73,6 +85,8 @@ impl Barn {
       node_cache,
       prefix: String::new(),
     };
+
+    gate.add(barn.api());
 
     barn.event_forwarder_start();
     let _ = events_tx.send(StoreEvent::Initialized);
@@ -497,63 +511,63 @@ impl ClusterStore for Barn {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::api::Api;
+  use crate::croft::Gate;
   use std::collections::BTreeMap;
   use std::net::SocketAddr;
   use std::time::Duration;
   use tokio::time::{sleep, timeout};
 
-  fn test_raft_config() -> raft::Config {
-    raft::Config {
-      heartbeat_interval: 50,
-      election_timeout_min: 150,
-      election_timeout_max: 300,
-    }
+  fn test_raft_config() -> (u64, u64, u64) {
+    (50, 150, 300)
   }
 
-  async fn spawn_test_barn(node_id: u64) -> Barn {
+  async fn spawn_test_barn(id: u64) -> Barn {
     let dir = tempfile::tempdir().expect("create temp dir");
+    let (heartbeat, election_min, election_max) = test_raft_config();
     let config = Config {
-      node_id,
-      api_addr: format!("127.0.0.1:{node_id}"),
+      id,
+      addr: format!("127.0.0.1:{id}"),
       data_dir: dir.path().to_path_buf(),
-      raft: test_raft_config(),
+      heartbeat_interval: heartbeat,
+      election_timeout_min: election_min,
+      election_timeout_max: election_max,
     };
     // Leak the tempdir so its files outlive the test's `Storage`/raft
     // handles instead of being deleted while still open.
     std::mem::forget(dir);
-    Barn::spawn(config).await.expect("spawn barn")
+    let gate = Gate::new();
+    Barn::spawn(&gate, config).await.expect("spawn barn")
   }
 
   /// Reserves a free local port by binding to it and immediately dropping
-  /// the listener, so `Api::listen` (which only takes a `SocketAddr`, not
-  /// a pre-bound listener) can be told a concrete address to rebind to.
-  /// Small theoretical race (another process could grab the port first),
-  /// but standard practice absent a lower-level "give me a listener" API.
+  /// the listener.
   fn reserve_local_addr() -> SocketAddr {
     let listener =
       std::net::TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
     listener.local_addr().expect("local addr")
   }
 
-  /// Spawns a real `Barn` backed by a real `Api::listen` on an actual
+  /// Spawns a real `Barn` backed by a real `Gate::listen` on an actual
   /// local TCP port, so other nodes in the same test can reach it over
-  /// real gRPC — no mocked transport, per this task's Definition of Done.
-  async fn spawn_networked_test_barn(node_id: u64) -> (Arc<Barn>, SocketAddr) {
+  /// real gRPC.
+  async fn spawn_networked_test_barn(id: u64) -> (Arc<Barn>, SocketAddr) {
     let dir = tempfile::tempdir().expect("create temp dir");
     let addr = reserve_local_addr();
+    let (heartbeat, election_min, election_max) = test_raft_config();
     let config = Config {
-      node_id,
-      api_addr: addr.to_string(),
+      id,
+      addr: addr.to_string(),
       data_dir: dir.path().to_path_buf(),
-      raft: test_raft_config(),
+      heartbeat_interval: heartbeat,
+      election_timeout_min: election_min,
+      election_timeout_max: election_max,
     };
     std::mem::forget(dir);
 
-    let barn = Arc::new(Barn::spawn(config).await.expect("spawn barn"));
-    let api = Api::new(barn.clone());
+    let gate = Gate::new();
+    let barn = Arc::new(Barn::spawn(&gate, config).await.expect("spawn barn"));
     tokio::spawn(async move {
-      let _ = api.listen(addr).await;
+      let _ = gate.listen(addr).await;
     });
 
     (barn, addr)

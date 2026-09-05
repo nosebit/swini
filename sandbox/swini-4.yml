@@ -1,0 +1,13 @@
+name: swini-4
+addr: 127.0.0.1:7444
+data_dir: ./sandbox/.data/swini-4
+roles:
+  - worker
+tags:
+  - zone-b
+  - compute
+  - gpu
+join_addresses:
+  - 127.0.0.1:7441
+  - 127.0.0.1:7442
+  - 127.0.0.1:7443

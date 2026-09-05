@@ -1,76 +1,37 @@
-# Swini Development Gude
+# Swini Development Guide
 
-The swini source code is splitted in the following modules;
+The Swini source code is organized into the following modules:
 
 - **[`cli/`](./cli/README.md)**: Command-line interface definitions and command
-  routing.
-- **[`core/`](./core/README.md)**: Shared utilities, tracing, global
-  configurations, and telemetry.
-- **[`node/`](./node/README.md)**: Local node operations, hardware metric
-  collection, and keepalives.
-- **[`store/`](./store/README.md)**: Different type of data stores used throught
-  the application.
+  routing (`swini regent start|stop|status`).
+- **[`core/`](./core/README.md)**: Foundational configuration resolution,
+  telemetry, and protobuf types.
+- **[`croft/`](./croft/README.md)**: Physical operational compound uniting
+  domain `Plot`, storage `Barn`, network `Gate`, and active `Config`.
+- **[`plot/`](./plot/README.md)**: Plot domain subsystem (entities
+  `Plot`/`PlotRole`, domain `Clerk` staff worker, and gRPC `PlotApi`).
+- **[`regent/`](./regent/README.md)**: Host supervisor process managing local
+  Croft lifecycle, process detachment, signal handling, and state persistence.
+- **[`store/`](./store/README.md)**: Distributed and local storage engines
+  (including Raft consensus engine `Barn`).
 
-In essence, Swini is composed of several independent subsystems (called
-components - the main "actors" in Swini) that communicate with each other
-through gRPC and a distributed state machine (Raft) to achieve a shared
-distributed state across all the nodes in a cluster. At a high level, the
-components are:
-
-- **Drover** (TBD): The workload orchestrator. It transforms user requests into
-  `Pigs` (desired state), schedules them across available nodes into `Yards`
-  (physical allocation), and actively reconciles the actual state using custom
-  engines like docker, exec, etc.
-- **Keeper** (TBD): The distributed storage. It stores arbitrary key-value data
-  across the cluster using different storage engines like kv and secret engines.
-- **Weaver** (TBD): The internal networking layer. It allows pigs to securely
-  expose and consume services from other pigs in the cluster.
-- **Router** (TBD): The edge networking layer. It allows pigs to securely expose
-  services to the outside world wide web.
+In essence, Swini operates a cluster of machines as a **Ranch**, where each
+machine acts as a computational **Croft** (housing a **Plot**, **Barn**, and
+**Gate**) supervised by a **Regent** and staffed by domain workers such as the
+**Plot Clerk**.
 
 ## Building & Running
 
-Swini uses [Just](https://just.systems/man/en/) and a couple of other tools to
-simplify local development. Run the following to make sure you have all the
-tools needed tools installed:
-
-```bash
-cargo install just just-lsp cargo-nextest cargo-llvm-cov
-```
-
-To compile the `swini` binary in debug mode (faster compilation, great for local
-testing):
+Swini uses [Just](https://just.systems/man/en/) and standard cargo tooling:
 
 ```bash
 cargo build
 ```
 
-This produces an executable at `./target/debug/swini`.
-
-For production-optimized builds:
-
-```bash
-cargo build --release
-```
-
-This produces an executable at `./target/release/swini`.
-
 ## Testing
 
-You can run all tests (unit and e2e) via the command:
+Run unit and integration tests via `cargo nextest`:
 
 ```bash
-just test
-
-# To run only unit tests run `just test-unit`.
-# To run only e2e tests run `just test-e2e`.
-# To generate and view test coverage run `just coverage`.
-```
-
-## Useful Commands
-
-```bash
-# Generate the Swini documentation powered by rustdoc and
-# open it in the browser
-cargo doc --open
+cargo nextest run
 ```
