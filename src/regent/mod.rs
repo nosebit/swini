@@ -285,11 +285,12 @@ pub async fn bootstrap_join(croft: &Croft) -> Result<(), Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::plot::PlotRole;
   use tempfile::tempdir;
 
   #[tokio::test]
   async fn bootstrap_join_all_unreachable_returns_error() {
-    let dir = tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
     let addr: std::net::SocketAddr = "127.0.0.1:7440".parse().unwrap();
     let config = Config {
       name: "test-node".to_string(),
@@ -302,5 +303,75 @@ mod tests {
 
     let res = bootstrap_join(&croft).await;
     assert!(res.is_err());
+  }
+
+  #[tokio::test]
+  async fn bootstrap_join_success_populates_barn_node_cache() {
+    let dir_server = tempdir().unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let server_addr = listener.local_addr().unwrap();
+    drop(listener);
+
+    let server_config = Config {
+      name: "server-node".to_string(),
+      addr: server_addr,
+      data_dir: dir_server.path().to_path_buf(),
+      roles: vec![PlotRole::Server],
+      ..Default::default()
+    };
+    let server_croft = Arc::new(Croft::spawn(&server_config).await.unwrap());
+    let self_node =
+      BarnNode::new(server_croft.plot.id, server_croft.config.addr.to_string());
+    let mut members = std::collections::BTreeMap::new();
+    members.insert(self_node.id, self_node);
+    server_croft.barn.raft().initialize(members).await.unwrap();
+
+    let server_clerk = PlotClerk::spawn(server_croft.clone()).unwrap();
+    let _ = server_clerk.join(server_croft.plot.clone()).await.unwrap();
+
+    let gate_server = server_croft.gate.clone();
+    let server_handle = tokio::spawn(async move {
+      let _ = gate_server.listen(server_addr).await;
+    });
+
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    // Worker node joins the server
+    let dir_worker = tempdir().unwrap();
+    let listener_w =
+      tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let worker_addr = listener_w.local_addr().unwrap();
+    drop(listener_w);
+
+    let worker_config = Config {
+      name: "worker-node".to_string(),
+      addr: worker_addr,
+      data_dir: dir_worker.path().to_path_buf(),
+      roles: vec![PlotRole::Worker],
+      join_addresses: vec![format!("http://{}", server_addr)],
+      ..Default::default()
+    };
+    let worker_croft = Croft::spawn(&worker_config).await.unwrap();
+
+    let join_res = bootstrap_join(&worker_croft).await;
+    assert!(join_res.is_ok());
+
+    let nodes = worker_croft.barn.node_list().await.unwrap();
+    assert!(!nodes.is_empty());
+
+    server_handle.abort();
+  }
+
+  #[tokio::test]
+  async fn candidate_data_dirs_and_status_queries() {
+    let dirs = candidate_data_dirs("test-instance");
+    assert_eq!(dirs.len(), 3);
+
+    // Query non-existent status
+    let res = status(Some("definitely-nonexistent-regent".to_string())).await;
+    assert!(res.is_ok());
+
+    let res_all = status(None).await;
+    assert!(res_all.is_ok());
   }
 }

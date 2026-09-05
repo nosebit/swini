@@ -151,6 +151,15 @@ mod tests {
     };
     assert!(plot_from_join_req(empty_name).is_err());
 
+    let empty_addr = JoinReq {
+      name: "test".to_string(),
+      addr: "   ".to_string(),
+      roles: vec!["server".to_string()],
+      tags: vec![],
+      id: 1,
+    };
+    assert!(plot_from_join_req(empty_addr).is_err());
+
     let empty_roles = JoinReq {
       name: "test".to_string(),
       addr: "127.0.0.1:7440".to_string(),
@@ -186,5 +195,43 @@ mod tests {
     assert_eq!(proto.name, "plot-99");
     assert_eq!(proto.roles, vec!["server".to_string()]);
     assert_eq!(proto.joined_at, "2026-09-03T12:00:00Z");
+  }
+
+  #[tokio::test]
+  async fn api_handler_status_and_join_rpcs() {
+    use crate::store::barn::Node as BarnNode;
+    use crate::store::SpreadNode;
+    use std::collections::BTreeMap;
+
+    let dir = tempfile::tempdir().unwrap();
+    let config = crate::core::Config {
+      addr: "127.0.0.1:0".parse().unwrap(),
+      data_dir: dir.path().to_path_buf(),
+      ..Default::default()
+    };
+    let croft =
+      std::sync::Arc::new(crate::croft::Croft::spawn(&config).await.unwrap());
+    let self_node = BarnNode::new(croft.plot.id, croft.config.addr.to_string());
+    let mut members = BTreeMap::new();
+    members.insert(self_node.id, self_node);
+    croft.barn.raft().initialize(members).await.unwrap();
+
+    let clerk = Clerk::spawn(croft).unwrap();
+    let api = Api::new(clerk);
+    let _server = api.clone().into_server();
+
+    let status_res = api.status(Request::new(StatusReq {})).await;
+    assert!(status_res.is_ok());
+
+    let join_res = api
+      .join(Request::new(JoinReq {
+        id: 100,
+        name: "node-100".to_string(),
+        addr: "127.0.0.1:7440".to_string(),
+        roles: vec!["worker".to_string()],
+        tags: vec!["zone-a".to_string()],
+      }))
+      .await;
+    assert!(join_res.is_ok());
   }
 }

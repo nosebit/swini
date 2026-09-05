@@ -85,10 +85,41 @@ impl Gate {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::core::proto::plot::plot_api_server::PlotApiServer;
+  use crate::plot::clerk::Api as PlotApiHandler;
+  use crate::plot::Clerk;
 
-  #[test]
-  fn gate_initializes_cleanly() {
-    let gate = Gate::new();
+  #[tokio::test]
+  async fn gate_initializes_and_mounts_services() {
+    let gate = Gate::default();
     assert!(gate.state.lock().unwrap().is_some());
+
+    let dir = tempfile::tempdir().unwrap();
+    let config = crate::core::Config {
+      addr: "127.0.0.1:0".parse().unwrap(),
+      data_dir: dir.path().to_path_buf(),
+      ..Default::default()
+    };
+    let croft =
+      std::sync::Arc::new(crate::croft::Croft::spawn(&config).await.unwrap());
+    let clerk = Clerk::new(croft.clone());
+    let handler = PlotApiHandler::new(clerk);
+
+    // Add first service (transition Builder -> Router)
+    gate.add(PlotApiServer::new(handler));
+    // Add second service (Router -> Router)
+    gate.add(croft.barn.api());
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let bound_addr = listener.local_addr().unwrap();
+    drop(listener);
+
+    let gate_clone = gate.clone();
+    let server = tokio::spawn(async move {
+      let _ = gate_clone.listen(bound_addr).await;
+    });
+
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    server.abort();
   }
 }

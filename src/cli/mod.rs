@@ -41,6 +41,14 @@ pub enum Command {
 pub fn resolve_api_url(
   regent_name: Option<&str>,
 ) -> Result<String, Box<dyn Error>> {
+  let env_override = std::env::var("SWINI_ADDR").ok();
+  resolve_api_url_internal(regent_name, env_override.as_deref())
+}
+
+fn resolve_api_url_internal(
+  regent_name: Option<&str>,
+  env_addr: Option<&str>,
+) -> Result<String, Box<dyn Error>> {
   let find_state = |name: &str| -> Option<crate::regent::RegentState> {
     let candidates = [
       crate::core::config::default_data_dir(name),
@@ -55,7 +63,7 @@ pub fn resolve_api_url(
     None
   };
 
-  if let Ok(url) = std::env::var("SWINI_ADDR") {
+  if let Some(url) = env_addr {
     let trimmed = url.trim();
     if let Some(name) = trimmed.strip_prefix("local://") {
       if let Some(state) = find_state(name) {
@@ -159,24 +167,32 @@ mod tests {
 
   #[test]
   fn resolve_api_url_resolution() {
-    std::env::remove_var("SWINI_ADDR");
-
-    // 1. Default URL
-    let url = resolve_api_url(None).unwrap();
+    // 1. Default URL (no env, no regent name)
+    let url = resolve_api_url_internal(None, None).unwrap();
     assert_eq!(url, "http://127.0.0.1:7440");
 
-    // 2. SWINI_ADDR override
-    std::env::set_var("SWINI_ADDR", "127.0.0.1:8888");
-    let url = resolve_api_url(None).unwrap();
+    // 2. SWINI_ADDR override without scheme
+    let url = resolve_api_url_internal(None, Some("127.0.0.1:8888")).unwrap();
     assert_eq!(url, "http://127.0.0.1:8888");
 
     // 3. SWINI_ADDR with http scheme
-    std::env::set_var("SWINI_ADDR", "http://127.0.0.1:9999");
-    let url = resolve_api_url(None).unwrap();
+    let url =
+      resolve_api_url_internal(None, Some("http://127.0.0.1:9999")).unwrap();
     assert_eq!(url, "http://127.0.0.1:9999");
-    std::env::remove_var("SWINI_ADDR");
 
-    // 4. local:// resolution from state
+    // 4. SWINI_ADDR with https scheme
+    let url =
+      resolve_api_url_internal(None, Some("https://example.com:9999")).unwrap();
+    assert_eq!(url, "https://example.com:9999");
+
+    // 5. Invalid local:// URL
+    assert!(resolve_api_url_internal(
+      None,
+      Some("local://nonexistent-regent-404")
+    )
+    .is_err());
+
+    // 6. local:// resolution from state
     let dir = tempdir().unwrap();
     let state = crate::regent::RegentState {
       pid: std::process::id(),
@@ -191,7 +207,11 @@ mod tests {
     };
     state.save().unwrap();
 
-    let resolved = resolve_api_url(Some("test-regent"));
+    let resolved = resolve_api_url_internal(Some("test-regent"), None);
     assert!(resolved.is_ok());
+
+    // 7. Calling public resolve_api_url directly
+    let direct = resolve_api_url(Some("test-regent"));
+    assert!(direct.is_ok());
   }
 }
