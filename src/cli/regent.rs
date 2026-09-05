@@ -25,7 +25,7 @@ pub enum Command {
     /// Regent name (defaults to "main")
     name: Option<String>,
   },
-  /// Inspects Regent status or Ranch plots
+  /// Inspects Regent status or Ranch crofts
   Status {
     /// Specific Regent name to query
     name: Option<String>,

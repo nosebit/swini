@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package swini.plot;
+package swini.croft;
 
-service PlotApi {
+service CroftApi {
   rpc Join(JoinReq) returns (JoinRes);
   rpc Status(StatusReq) returns (StatusRes);
 }
@@ -16,17 +16,17 @@ message JoinReq {
 }
 
 message JoinRes {
-  repeated Plot server_plots = 1;
+  repeated Croft server_crofts = 1;
 }
 
 message StatusReq {}
 
 message StatusRes {
-  repeated Plot plots = 1;
+  repeated Croft crofts = 1;
   uint64 primary_id = 2;
 }
 
-message Plot {
+message Croft {
   uint64 id = 1;
   string name = 2;
   string addr = 3;

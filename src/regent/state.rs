@@ -2,14 +2,14 @@
 //!
 //! Exposes [`RegentState`], which serializes active process metadata (`pid`,
 //! `detached`, `started_at`, and the active [`Config`] snapshot) into
-//! `{data_dir}/state.json`.
+//! `{data_dir}/regent.json`.
 
-use crate::core::Config;
+use crate::croft::Config;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::path::{Path, PathBuf};
 
-/// Persistent runtime state recorded by a running Regent instance.
+/// Persistent runtime state recorded by a running Regent supervisor process.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RegentState {
   /// Operating system process ID of the running Regent.
@@ -23,13 +23,16 @@ pub struct RegentState {
 }
 
 impl RegentState {
-  /// Computes the filesystem path to the `state.json` file for a given data
+  /// Computes the filesystem path to the `regent.json` file for a given data
   /// directory.
   pub fn path(data_dir: &Path) -> PathBuf {
-    data_dir.join("state.json")
+    data_dir.join("regent.json")
   }
 
-  /// Writes this state snapshot to `{config.data_dir}/state.json`.
+  /// Writes this state snapshot to `{config.data_dir}/regent.json`.
+  ///
+  /// # Errors
+  /// Returns an error if directory creation or file writing fails.
   pub fn save(&self) -> Result<(), Box<dyn Error>> {
     std::fs::create_dir_all(&self.config.data_dir)?;
     let state_path = Self::path(&self.config.data_dir);
@@ -40,6 +43,10 @@ impl RegentState {
 
   /// Loads and deserializes a [`RegentState`] snapshot from the specified data
   /// directory.
+  ///
+  /// # Errors
+  /// Returns an error if the state file does not exist or fails to parse as
+  /// JSON.
   pub fn load(data_dir: &Path) -> Result<Self, Box<dyn Error>> {
     let state_path = Self::path(data_dir);
     let content = std::fs::read_to_string(state_path)?;
@@ -47,7 +54,7 @@ impl RegentState {
     Ok(state)
   }
 
-  /// Removes the `state.json` file from disk if present.
+  /// Removes the `regent.json` file from disk if present.
   pub fn cleanup(data_dir: &Path) {
     let state_path = Self::path(data_dir);
     let _ = std::fs::remove_file(state_path);

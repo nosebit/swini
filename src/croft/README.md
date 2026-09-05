@@ -2,59 +2,66 @@
 
 In traditional rural agriculture (notably in Scottish and British pastoral
 heritage), a **Croft** is an established working farmstead. In Swini a Croft
-represents all the infrastructure necessary for the functioning of a single node
-in the distributed system including:
+represents the canonical domain concept and operational compound for a single
+node in the distributed system including:
 
-- **The Plot of Land**: This represents the underlying host resources (the base,
-  the soil) available to be used within the Croft.
-- **The Barn**: This is the main data storage used throughout the entire
-  Cluster/Ranch.
-- **The Gate**: This is the entry point of the Croft where messages targeting
-  this specific Croft arrive.
-- **Operation Config**: This is the main config received by the Croft Regent and
-  placed into the Croft itself so everyone knows.
+- **Croft Identity**: The node's unique 64-bit ID, name, network address,
+  assigned roles, and tags.
+- **The Barn**: The consensus key-value storage engine used throughout the
+  cluster/Ranch.
+- **The Gate**: The network entrance where incoming gRPC requests arrive.
+- **Operation Config**: The runtime configuration loaded by the Regent and used
+  to spawn the Croft.
 
 The Croft has a set of "staff" members which operate within the Croft and are
-managed by the Croft Regent. The Regent creates the Croft and then spawns
-several staff members (employees) to operate in that Croft. For example, the
-Plot Clerk is spawned by the Regent and placed into the Croft to handle
-Plot-related affairs and messages.
+managed by the Croft Regent. The Regent creates the Croft and then spawns staff
+members to operate in that Croft. For example, the **Croft Clerk** is spawned by
+the Regent and placed into the Croft to handle cluster registration and
+discovery.
 
 ---
 
 ## Architectural Role of `Croft`
 
-The [`Croft`](./mod.rs) struct is the concrete compound that bundles these
-foundational infrastructure elements together on a single machine:
+The [`Croft`](./mod.rs) struct is the concrete compound and domain entity
+representing a machine on the Ranch:
 
 ```rust
 pub struct Croft {
-  pub plot: Plot,
-  pub barn: Arc<Barn>,
-  pub gate: Gate,
-  pub config: Config,
+  pub id: u64,
+  pub name: String,
+  pub addr: String,
+  pub roles: Vec<CroftRole>,
+  pub tags: Vec<String>,
+  pub joined_at: String,
+  pub barn: Option<Arc<Barn>>,
+  pub gate: Option<Gate>,
 }
 ```
 
 ### Staff Workers
 
-Staff members (such as the **[`PlotClerk`](../plot/clerk/mod.rs)**) are hired
-into a Croft by receiving a shared `Arc<Croft>` handle:
+Staff members (such as the **[`CroftClerk`](./clerk/mod.rs)**) are hired into a
+Croft by receiving a shared `Arc<Croft>` handle:
 
-- They inspect local identity via `croft.plot`.
+- They inspect identity directly via `croft.id`, `croft.name`, `croft.addr`,
+  `croft.roles`.
 - They persist and retrieve domain records via `croft.barn`.
-- They station their API listeners at the entrance via `croft.gate.add(...)`.
+- They station their API listeners at the entrance via
+  `croft.gate.as_ref().unwrap().add(...)`.
 
-The host **[`Regent`](../regent/mod.rs)** process acts as the overall estate
-manager on that machine, responsible for spawning the `Croft`, hiring its staff,
-coordinating Ranch-wide joins, and opening the `Gate` to listen for network
-traffic.
+The host **[`Regent`](../regent/mod.rs)** process acts as the supervisor on that
+machine, responsible for spawning the `Croft`, hiring its staff, coordinating
+Ranch-wide joins, and opening the `Gate` to listen for network traffic.
 
 ---
 
 ## Module Structure
 
-| File                       | Responsibility                                                                                                                                                            |
-| :------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **[`mod.rs`](./mod.rs)**   | Operational compound [`Croft`](./mod.rs) unifying local [`Plot`](../plot/mod.rs), [`Barn`](../store/barn/mod.rs), [`Gate`](./gate.rs), and [`Config`](../core/config.rs). |
-| **[`gate.rs`](./gate.rs)** | Network gateway [`Gate`](./gate.rs) managing the underlying tonic gRPC server and router.                                                                                 |
+| File                           | Responsibility                                                                                      |
+| :----------------------------- | :-------------------------------------------------------------------------------------------------- |
+| **[`mod.rs`](./mod.rs)**       | Canonical domain entity and operational compound [`Croft`](./mod.rs).                               |
+| **[`types.rs`](./types.rs)**   | Cluster role definitions ([`CroftRole`](./types.rs)).                                               |
+| **[`config.rs`](./config.rs)** | Configuration loading, YAML merging, and path resolutions ([`Config`](./config.rs)).                |
+| **[`gate.rs`](./gate.rs)**     | Network gateway [`Gate`](./gate.rs) managing the underlying tonic gRPC server and router.           |
+| **[`clerk/`](./clerk/mod.rs)** | Domain staff worker ([`Clerk`](./clerk/mod.rs)) and gRPC service handler ([`Api`](./clerk/api.rs)). |

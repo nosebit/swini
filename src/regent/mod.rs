@@ -2,19 +2,18 @@
 //! coordination.
 //!
 //! Submodules:
-//! - [`state`]: Manages runtime process state persistence (`state.json`).
+//! - [`state`]: Manages runtime process state persistence (`regent.json`).
 
 pub mod state;
 
 pub use state::RegentState;
 
-use crate::core::config::{self, Config, DEFAULT_NAME};
-use crate::core::proto::plot::plot_api_client::PlotApiClient;
-use crate::core::proto::plot::JoinReq;
+use crate::core::proto::croft::croft_api_client::CroftApiClient;
+use crate::core::proto::croft::JoinReq;
 use crate::core::telemetry;
-use crate::croft::Croft;
-use crate::plot::clerk::api::plot_from_join_req;
-use crate::plot::{Clerk as PlotClerk, Plot};
+use crate::croft::clerk::api::croft_from_join_req;
+use crate::croft::config::{self, Config, DEFAULT_NAME};
+use crate::croft::{Clerk as CroftClerk, Croft};
 use crate::store::barn::Node as BarnNode;
 use crate::store::{SpreadNode, SpreadStore};
 use std::error::Error;
@@ -50,17 +49,22 @@ pub async fn start(
   let croft = Arc::new(Croft::spawn(&config).await?);
 
   if !config.join_addresses.is_empty() {
-    let _ = bootstrap_join(&croft).await;
+    let _ = bootstrap_join(&config, &croft).await;
   }
 
-  let _plot_clerk = PlotClerk::spawn(croft.clone())?;
+  let _croft_clerk = CroftClerk::spawn(croft.clone())?;
+
+  // Persist the croft info into the Barn
+  let _ = croft.persist().await;
 
   let bind_addr = config.addr;
   let server_handle = tokio::spawn({
     let croft = croft.clone();
     async move {
-      if let Err(e) = croft.gate.listen(bind_addr).await {
-        tracing::error!(error = %e, "Gate server terminated unexpectedly");
+      if let Some(ref gate) = croft.gate {
+        if let Err(e) = gate.listen(bind_addr).await {
+          tracing::error!(error = %e, "Gate server terminated unexpectedly");
+        }
       }
     }
   });
@@ -84,7 +88,7 @@ pub async fn start(
   std::process::exit(0);
 }
 
-/// Returns candidate data directories where state.json may reside.
+/// Returns candidate data directories where regent.json may reside.
 fn candidate_data_dirs(name: &str) -> Vec<PathBuf> {
   vec![
     config::default_data_dir(name),
@@ -94,6 +98,9 @@ fn candidate_data_dirs(name: &str) -> Vec<PathBuf> {
 }
 
 /// Gracefully terminates a running Regent instance by PID.
+///
+/// # Errors
+/// Returns an error if the named Regent state cannot be located.
 pub async fn stop(name: Option<String>) -> Result<(), Box<dyn Error>> {
   let target_name = name.as_deref().unwrap_or(DEFAULT_NAME);
   let candidates = candidate_data_dirs(target_name);
@@ -144,8 +151,11 @@ pub async fn stop(name: Option<String>) -> Result<(), Box<dyn Error>> {
 }
 
 /// Inspects and displays the status of local Regent instances.
+///
+/// # Errors
+/// Returns an error if directory traversal fails.
 pub async fn status(name: Option<String>) -> Result<(), Box<dyn Error>> {
-  let mut roots = vec![config::regents_dir()];
+  let mut roots = vec![config::crofts_dir()];
   let sandbox_dir = PathBuf::from("sandbox/.data");
   if sandbox_dir.exists() {
     roots.push(sandbox_dir);
@@ -158,12 +168,12 @@ pub async fn status(name: Option<String>) -> Result<(), Box<dyn Error>> {
   let mut seen = std::collections::HashSet::new();
   let mut header_printed = false;
 
-  for regents_root in roots {
-    if !regents_root.exists() {
+  for crofts_root in roots {
+    if !crofts_root.exists() {
       continue;
     }
 
-    if let Ok(mut entries) = tokio::fs::read_dir(regents_root).await {
+    if let Ok(mut entries) = tokio::fs::read_dir(crofts_root).await {
       while let Ok(Some(entry)) = entries.next_entry().await {
         if entry.file_type().await.map(|t| t.is_dir()).unwrap_or(false) {
           let regent_name = entry.file_name().to_string_lossy().to_string();
@@ -221,8 +231,8 @@ pub async fn status(name: Option<String>) -> Result<(), Box<dyn Error>> {
 
 async fn dial_join(
   peer_addr: &str,
-  plot: &Plot,
-) -> Result<Vec<Plot>, Box<dyn Error>> {
+  croft: &Croft,
+) -> Result<Vec<Croft>, Box<dyn Error>> {
   let endpoint =
     if peer_addr.starts_with("http://") || peer_addr.starts_with("https://") {
       peer_addr.to_string()
@@ -230,46 +240,55 @@ async fn dial_join(
       format!("http://{}", peer_addr)
     };
 
-  let mut client = PlotApiClient::connect(endpoint).await?;
+  let mut client = CroftApiClient::connect(endpoint).await?;
   let req = JoinReq {
-    id: plot.id,
-    name: plot.name.clone(),
-    addr: plot.addr.clone(),
-    roles: plot.roles.iter().map(|r| r.to_string()).collect(),
-    tags: plot.tags.clone(),
+    id: croft.id,
+    name: croft.name.clone(),
+    addr: croft.addr.clone(),
+    roles: croft.roles.iter().map(|r| r.to_string()).collect(),
+    tags: croft.tags.clone(),
   };
 
   let res = client.join(req).await?.into_inner();
-  let server_plots = res
-    .server_plots
+  let server_crofts = res
+    .server_crofts
     .into_iter()
-    .filter_map(|p| {
-      plot_from_join_req(JoinReq {
-        id: p.id,
-        name: p.name,
-        addr: p.addr,
-        roles: p.roles,
-        tags: p.tags,
+    .filter_map(|c| {
+      croft_from_join_req(JoinReq {
+        id: c.id,
+        name: c.name,
+        addr: c.addr,
+        roles: c.roles,
+        tags: c.tags,
       })
       .ok()
     })
     .collect();
 
-  Ok(server_plots)
+  Ok(server_crofts)
 }
 
-/// Dials configured peer join addresses to register this Plot and cache active
-/// Server plots.
-pub async fn bootstrap_join(croft: &Croft) -> Result<(), Box<dyn Error>> {
-  for peer in &croft.config.join_addresses {
-    match dial_join(peer, &croft.plot).await {
-      Ok(server_plots) => {
-        if !croft.plot.is_server() {
-          let barn_nodes: Vec<BarnNode> = server_plots
+/// Dials configured peer join addresses to register this Croft and cache active
+/// Server crofts.
+///
+/// # Errors
+/// Returns an error if none of the configured peer addresses could be
+/// contacted.
+pub async fn bootstrap_join(
+  config: &Config,
+  croft: &Croft,
+) -> Result<(), Box<dyn Error>> {
+  for peer in &config.join_addresses {
+    match dial_join(peer, croft).await {
+      Ok(server_crofts) => {
+        if !croft.is_server() {
+          let barn_nodes: Vec<BarnNode> = server_crofts
             .into_iter()
-            .map(|p| BarnNode::new(p.id, p.addr))
+            .map(|c| BarnNode::new(c.id, c.addr))
             .collect();
-          croft.barn.node_cache_set(barn_nodes).await?;
+          if let Some(ref barn) = croft.barn {
+            barn.node_cache_set(barn_nodes).await?;
+          }
         }
         return Ok(());
       }
@@ -285,7 +304,7 @@ pub async fn bootstrap_join(croft: &Croft) -> Result<(), Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::plot::PlotRole;
+  use crate::croft::CroftRole;
   use tempfile::tempdir;
 
   #[tokio::test]
@@ -301,7 +320,7 @@ mod tests {
     };
     let croft = Croft::spawn(&config).await.unwrap();
 
-    let res = bootstrap_join(&croft).await;
+    let res = bootstrap_join(&config, &croft).await;
     assert!(res.is_err());
   }
 
@@ -316,20 +335,23 @@ mod tests {
       name: "server-node".to_string(),
       addr: server_addr,
       data_dir: dir_server.path().to_path_buf(),
-      roles: vec![PlotRole::Server],
+      roles: vec![CroftRole::Server],
       ..Default::default()
     };
     let server_croft = Arc::new(Croft::spawn(&server_config).await.unwrap());
-    let self_node =
-      BarnNode::new(server_croft.plot.id, server_croft.config.addr.to_string());
+    let barn = server_croft.barn.as_ref().unwrap();
+    let self_node = BarnNode::new(server_croft.id, server_croft.addr.clone());
     let mut members = std::collections::BTreeMap::new();
     members.insert(self_node.id, self_node);
-    server_croft.barn.raft().initialize(members).await.unwrap();
+    barn.raft().initialize(members).await.unwrap();
 
-    let server_clerk = PlotClerk::spawn(server_croft.clone()).unwrap();
-    let _ = server_clerk.join(server_croft.plot.clone()).await.unwrap();
+    let server_clerk = CroftClerk::spawn(server_croft.clone()).unwrap();
+    let _ = server_clerk
+      .join(server_croft.as_ref().clone())
+      .await
+      .unwrap();
 
-    let gate_server = server_croft.gate.clone();
+    let gate_server = server_croft.gate.clone().unwrap();
     let server_handle = tokio::spawn(async move {
       let _ = gate_server.listen(server_addr).await;
     });
@@ -347,17 +369,18 @@ mod tests {
       name: "worker-node".to_string(),
       addr: worker_addr,
       data_dir: dir_worker.path().to_path_buf(),
-      roles: vec![PlotRole::Worker],
+      roles: vec![CroftRole::Worker],
       join_addresses: vec![format!("http://{}", server_addr)],
       ..Default::default()
     };
     let worker_croft = Croft::spawn(&worker_config).await.unwrap();
 
-    let join_res = bootstrap_join(&worker_croft).await;
+    let join_res =
+      dial_join(&format!("http://{}", server_addr), &worker_croft).await;
     assert!(join_res.is_ok());
 
-    let nodes = worker_croft.barn.node_list().await.unwrap();
-    assert!(!nodes.is_empty());
+    let server_crofts = join_res.unwrap();
+    assert!(!server_crofts.is_empty());
 
     server_handle.abort();
   }
