@@ -3,7 +3,8 @@
 //!
 //! Exposes [`CroftRole`], which designates the functional responsibilities
 //! assigned to a Croft within the Ranch cluster (Server consensus vs. Worker
-//! execution).
+//! execution), and [`Croft`], the persistent domain entity holding a Croft's
+//! identity and metadata.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -53,6 +54,35 @@ impl FromStr for CroftRole {
   }
 }
 
+/// Persistent domain entity representing a Croft's identity and metadata.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct Croft {
+  /// Unique 64-bit identifier for this Croft.
+  pub id: u64,
+  /// Human-readable node name (e.g., "worker-01").
+  pub name: String,
+  /// Canonical network address (e.g., "127.0.0.1:7440") where Gate listens.
+  pub addr: String,
+  /// Assigned roles in the cluster (Server, Worker).
+  pub roles: Vec<CroftRole>,
+  /// Informational grouping tags associated with the Croft.
+  pub tags: Vec<String>,
+  /// ISO-8601 UTC timestamp when the Croft joined the Ranch.
+  pub joined_at: String,
+}
+
+impl Croft {
+  /// Returns `true` if this Croft has the [`CroftRole::Server`] role.
+  pub fn is_server(&self) -> bool {
+    self.roles.contains(&CroftRole::Server)
+  }
+
+  /// Returns `true` if this Croft has the [`CroftRole::Worker`] role.
+  pub fn is_worker(&self) -> bool {
+    self.roles.contains(&CroftRole::Worker)
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -79,5 +109,24 @@ mod tests {
     assert_eq!(json, "\"worker\"");
     let parsed: CroftRole = serde_json::from_str(&json).unwrap();
     assert_eq!(parsed, worker);
+  }
+
+  #[test]
+  fn croft_role_checks_and_serialization() {
+    let croft = Croft {
+      id: 42,
+      name: "worker-01".to_string(),
+      addr: "127.0.0.1:7440".to_string(),
+      roles: vec![CroftRole::Worker],
+      tags: vec!["zone-a".to_string()],
+      joined_at: "2026-09-05T12:00:00Z".to_string(),
+    };
+
+    assert!(!croft.is_server());
+    assert!(croft.is_worker());
+
+    let json = serde_json::to_string(&croft).unwrap();
+    let deserialized: Croft = serde_json::from_str(&json).unwrap();
+    assert_eq!(croft, deserialized);
   }
 }

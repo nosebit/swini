@@ -1,52 +1,98 @@
+//! Generic item storage abstractions and event definitions.
+//!
+//! Exposes [`ItemStore`], the fundamental trait for storing, retrieving, and
+//! deleting entity items within Swini's storage subsystem, along with
+//! [`ItemStoreEvent`].
+
 use super::core::Store;
 use std::error::Error;
 
-/// This is a custom store event that item stores can emit.
-#[derive(Debug, Clone, PartialEq)]
-pub enum ItemStoreEvent<K, V> {
-  ItemCreated(K, V),
-  ItemPatched(K, V),
+/// Custom store event emitted by item stores on item lifecycle mutations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ItemStoreEvent<K, I> {
+  /// Emitted when a new item is stored.
+  ItemCreated(K, I),
+  /// Emitted when an existing item's contents are updated or replaced.
+  ItemPatched(K, I),
+  /// Emitted when an item is removed from the store.
   ItemRemoved(K),
 }
 
-/// This is a generic key-value store.
+/// Generic key-value store holding entity items.
 #[async_trait::async_trait]
 pub trait ItemStore: Store
 where
-  Self::Event: TryInto<ItemStoreEvent<Self::Key, Self::Value>>,
+  Self::Event: TryInto<ItemStoreEvent<Self::Key, Self::Item>>,
 {
   /// The generic type of an item key.
   type Key: Clone + Send + Sync + 'static;
 
-  /// The generic type of an item value.
-  type Value: Clone + Send + Sync + 'static;
+  /// The generic type of an entity item value.
+  type Item: Clone + Send + Sync + 'static;
 
-  /// This function creates a slice of this ItemStore which basically
-  /// creates a scope where all keys will be prefixed with the given prefix.
+  /// Creates a scoped slice of this ItemStore where all keys are transparently
+  /// prefixed with the given prefix string.
   fn slice(&self, prefix: &str) -> Self
   where
     Self: Sized;
 
-  /// This function retrieves an item value given an item key.
+  /// Retrieves an item by its key from the store.
+  ///
+  /// # Errors
+  /// Returns an error if the underlying storage engine fails to read the key.
   async fn get(
     &self,
     key: &Self::Key,
-  ) -> Result<Option<Self::Value>, Box<dyn Error>>;
+  ) -> Result<Option<Self::Item>, Box<dyn Error>>;
 
-  /// This function sets an item value for a given item key.
+  /// Sets an item for the specified key, creating or replacing it.
+  ///
+  /// # Errors
+  /// Returns an error if the storage engine fails to persist the write.
   async fn set(
     &self,
     key: &Self::Key,
-    value: Self::Value,
+    item: Self::Item,
   ) -> Result<(), Box<dyn Error>>;
 
-  // This function deletes an item from the store by its key.
+  /// Deletes an item from the store by its key.
+  ///
+  /// # Errors
+  /// Returns an error if the storage engine fails to delete the key.
   async fn delete(&self, key: &Self::Key) -> Result<(), Box<dyn Error>>;
 
-  // This function lists all items whose keys are prefixed with the given
-  // prefix.
+  /// Lists all key-item pairs whose keys start with the specified prefix.
+  ///
+  /// # Errors
+  /// Returns an error if scanning or reading from storage fails.
   async fn list(
     &self,
     prefix: Option<&Self::Key>,
-  ) -> Result<Vec<(Self::Key, Self::Value)>, Box<dyn Error>>;
+  ) -> Result<Vec<(Self::Key, Self::Item)>, Box<dyn Error>>;
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn item_store_event_variants() {
+    let created =
+      ItemStoreEvent::ItemCreated("croft/1".to_string(), vec![1, 2, 3]);
+    assert_eq!(
+      created,
+      ItemStoreEvent::ItemCreated("croft/1".to_string(), vec![1, 2, 3])
+    );
+
+    let patched =
+      ItemStoreEvent::ItemPatched("croft/1".to_string(), vec![4, 5, 6]);
+    assert_eq!(
+      patched,
+      ItemStoreEvent::ItemPatched("croft/1".to_string(), vec![4, 5, 6])
+    );
+
+    let removed: ItemStoreEvent<String, Vec<u8>> =
+      ItemStoreEvent::ItemRemoved("croft/1".to_string());
+    assert_eq!(removed, ItemStoreEvent::ItemRemoved("croft/1".to_string()));
+  }
 }

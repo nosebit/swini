@@ -1,22 +1,22 @@
 # The Barn Store
 
-Barn is swini's replicated key/value store: the backend meant to implement the
-[`ClusterStore`](../cluster.rs) trait (which in turn combines
+Barn is swini's replicated key/value item store: the backend meant to implement
+the [`RanchStore`](../ranch.rs) trait (which in turn combines
 [`ItemStore`](../item.rs) and [`SpreadStore`](../spread.rs), both defined in
 `src/store/`). "Barn" is just this implementation's name — the traits it's built
 for don't know or care that it's raft-based, so in principle another
 implementation could back the same traits differently.
 
-Concretely, Barn is a [Raft](https://raft.github.io/) cluster: application data
-is replicated across every voting member so the store keeps working (and keeps
-agreeing on the same data) as long as a majority of nodes are up. The actual
-Raft mechanics — leader election, log replication, node-to-node RPCs — live
-under [`raft/`](raft/README.md). This module is the layer on top: what gets
+Concretely, Barn is a [Raft](https://raft.github.io/) cluster: living entity
+records are replicated across every voting member so the store keeps working
+(and keeps agreeing on the same data) as long as a majority of nodes are up. The
+actual Raft mechanics — leader election, log replication, node-to-node RPCs —
+live under [`raft/`](raft/README.md). This module is the layer on top: what gets
 replicated, and how it's durably applied.
 
 ## How it works
 
-1. A client wants to change data (set/delete/patch a key) and proposes an
+1. A client wants to change data (set/delete/patch an item) and proposes an
    [`Action`](types.rs) to the cluster.
 2. That action is appended to the Raft log and replicated to a quorum of nodes —
    this part is entirely [`raft/`](raft/)'s job, driven by the
@@ -36,7 +36,7 @@ replicated, and how it's durably applied.
 Two separate `redb` databases are involved per node, deliberately kept apart:
 the Raft log itself (entries, saved vote, purge watermark — owned by
 [`raft::storage::LogStorage`](raft/storage.rs)) and the application's actual
-key/value data (owned by this module's [`Storage`](storage.rs)). openraft's
+item data (owned by this module's [`Storage`](storage.rs)). openraft's
 `storage-v2` API (enabled in `Cargo.toml`) is what allows splitting these into
 independent stores instead of one combined `RaftStorage` — see the
 [raft README](raft/README.md) for why that split exists and how the two pieces
@@ -44,7 +44,7 @@ are wired together in `raft::create`.
 
 ## Current status
 
-Barn is load-bearing: [`Barn`](mod.rs) implements `ClusterStore` (in turn
+Barn is load-bearing: [`Barn`](mod.rs) implements `RanchStore` (in turn
 `ItemStore` + `SpreadStore`), and [`Barn::spawn`](mod.rs) assembles a running
 node — opening [`Storage`](storage.rs), calling [`raft::create`](raft/mod.rs),
 and starting a background task that keeps [`Barn`](mod.rs)'s node list current
@@ -66,9 +66,9 @@ for why the current design already anticipates one).
 
 | File                       | What's in it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`mod.rs`](mod.rs)         | [`Barn`](mod.rs): the concrete `ClusterStore`/`ItemStore`/`SpreadStore` implementation, its `spawn` constructor, and the private routing/forwarding logic (`get`/`set`/`stale_get`, leader resolution, the raft-metrics-and-storage-events-to-`Event`s background task). `config`, `events`, `raft`, `storage`, and `types` stay private submodules — `Config`, `Event`, `Node`, `Action`, `ActionResult`, `ReadAction`, `ReadResult` are the only names re-exported flat at the `barn::` level. **Start here** if you want to know how a Barn node actually works end to end.                                                              |
+| [`mod.rs`](mod.rs)         | [`Barn`](mod.rs): the concrete `RanchStore`/`ItemStore`/`SpreadStore` implementation, its `spawn` constructor, and the private routing/forwarding logic (`get`/`set`/`stale_get`, leader resolution, the raft-metrics-and-storage-events-to-`Event`s background task). `config`, `events`, `raft`, `storage`, and `types` stay private submodules — `Config`, `Event`, `Node`, `Action`, `ActionResult`, `ReadAction`, `ReadResult` are the only names re-exported flat at the `barn::` level. **Start here** if you want to know how a Barn node actually works end to end.                                                                |
 | [`config.rs`](config.rs)   | [`Config`](config.rs): the top-level config for a Barn node — `id`, `addr`, `data_dir`, and inlined Raft consensus timers (`heartbeat_interval`, `election_timeout_min`, `election_timeout_max`).                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| [`events.rs`](events.rs)   | [`Event`](events.rs): the flat event enum `Barn` emits over `Store::subscribe` (`ItemCreated`/`ItemPatched`/`ItemRemoved`/`NodeAdded`/`NodeRemoved`/`NodeChanged`), plus its `TryFrom` conversions into the generic `ItemStoreEvent`/`SpreadStoreEvent` shapes `ClusterStore::ClusterEvent` requires.                                                                                                                                                                                                                                                                                                                                       |
+| [`events.rs`](events.rs)   | [`Event`](events.rs): the flat event enum `Barn` emits over `Store::subscribe` (`ItemCreated`/`ItemPatched`/`ItemRemoved`/`NodeAdded`/`NodeRemoved`/`NodeChanged`), plus its `TryFrom` conversions into the generic `ItemStoreEvent`/`SpreadStoreEvent` shapes `RanchStore::RanchEvent` requires.                                                                                                                                                                                                                                                                                                                                           |
 | [`types.rs`](types.rs)     | The vocabulary Barn's state machine speaks: [`Action`](types.rs) (`Set`/`Delete`/`Patch` — what gets proposed and replicated) and its [`ActionResult`](types.rs); [`ReadAction`](types.rs) (`Get`/`List`) and its [`ReadResult`](types.rs). Also declares [`TypeConfig`](types.rs) via openraft's `declare_raft_types!` macro — the concrete `RaftTypeConfig` (`D = Action`, `R = ActionResult`, `Node = raft::Node`) that every other piece of Barn (and of `raft/`) is generic over `C: RaftTypeConfig` for, but that production code actually instantiates with. **Start here** if you want to know what a Barn node can be asked to do. |
 | [`storage.rs`](storage.rs) | [`Storage`](storage.rs): the Raft _state machine_ for `TypeConfig` (`RaftStateMachine` + `RaftSnapshotBuilder`). Applies committed `Action`s to a `redb` database (one table for app data, one for metadata like the last-applied log id and membership), and builds/installs snapshots for followers that fall behind. Also answers local `ReadAction`s directly (`read`) and broadcasts an `ItemStoreEvent` every time a `Set`/`Patch`/`Delete` is durably applied (`subscribe`). This is where "committed" becomes "durably stored and readable." **Start here** if you want to know what happens to data once Raft has agreed on it.    |
 | [`raft/`](raft/README.md)  | The actual Raft engine wiring: log storage, node-to-node network transport, and `create()`, which assembles all of the above into a running `openraft::Raft` instance. Has its own [README](raft/README.md) — **start there** if you want to know how consensus/replication itself works.                                                                                                                                                                                                                                                                                                                                                   |

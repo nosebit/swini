@@ -12,57 +12,86 @@ use crate::croft::clerk::Clerk;
 use crate::croft::{Croft, CroftRole};
 use tonic::{Request, Response, Status};
 
-/// Validates and converts an incoming [`JoinReq`] Protobuf message into a
-/// domain [`Croft`].
-///
-/// # Errors
-/// Returns an error string if `name` or `addr` are blank, or if any role string
-/// is unrecognized.
-pub fn croft_from_join_req(req: JoinReq) -> Result<Croft, String> {
-  let name = req.name.trim();
-  if name.is_empty() {
-    return Err("Croft name cannot be empty".to_string());
+impl TryFrom<JoinReq> for Croft {
+  type Error = String;
+
+  /// Validates and converts an incoming [`JoinReq`] Protobuf message into a
+  /// domain [`Croft`].
+  ///
+  /// # Errors
+  /// Returns an error string if `name` or `addr` are blank, or if any role
+  /// string is unrecognized.
+  fn try_from(req: JoinReq) -> Result<Self, Self::Error> {
+    let name = req.name.trim();
+    if name.is_empty() {
+      return Err("Croft name cannot be empty".to_string());
+    }
+
+    let addr = req.addr.trim();
+    if addr.is_empty() {
+      return Err("Croft addr cannot be empty".to_string());
+    }
+
+    let roles: Result<Vec<CroftRole>, String> = req
+      .roles
+      .into_iter()
+      .map(|r| r.parse::<CroftRole>())
+      .collect();
+    let roles = roles?;
+
+    if roles.is_empty() {
+      return Err("Croft must have at least one role".to_string());
+    }
+
+    Ok(Croft {
+      id: req.id,
+      name: name.to_string(),
+      addr: addr.to_string(),
+      roles,
+      tags: req.tags,
+      joined_at: String::new(),
+    })
   }
-
-  let addr = req.addr.trim();
-  if addr.is_empty() {
-    return Err("Croft addr cannot be empty".to_string());
-  }
-
-  let roles: Result<Vec<CroftRole>, String> = req
-    .roles
-    .into_iter()
-    .map(|r| r.parse::<CroftRole>())
-    .collect();
-  let roles = roles?;
-
-  if roles.is_empty() {
-    return Err("Croft must have at least one role".to_string());
-  }
-
-  Ok(Croft {
-    id: req.id,
-    name: name.to_string(),
-    addr: addr.to_string(),
-    roles,
-    tags: req.tags,
-    joined_at: String::new(),
-    barn: None,
-    gate: None,
-  })
 }
 
-/// Converts an internal domain [`Croft`] entity into its Protobuf
-/// [`ProtoCroft`] wire format.
-pub fn proto_croft_from_croft(croft: Croft) -> ProtoCroft {
-  ProtoCroft {
-    id: croft.id,
-    name: croft.name,
-    addr: croft.addr,
-    roles: croft.roles.into_iter().map(|r| r.to_string()).collect(),
-    tags: croft.tags,
-    joined_at: croft.joined_at,
-    is_primary: false,
+impl TryFrom<ProtoCroft> for Croft {
+  type Error = String;
+
+  /// Converts a wire format [`ProtoCroft`] message into a domain [`Croft`].
+  ///
+  /// # Errors
+  /// Returns an error string if any role string is unrecognized.
+  fn try_from(proto: ProtoCroft) -> Result<Self, Self::Error> {
+    let roles: Result<Vec<CroftRole>, String> = proto
+      .roles
+      .into_iter()
+      .map(|r| r.parse::<CroftRole>())
+      .collect();
+
+    Ok(Croft {
+      id: proto.id,
+      name: proto.name,
+      addr: proto.addr,
+      roles: roles?,
+      tags: proto.tags,
+      joined_at: proto.joined_at,
+    })
+  }
+}
+
+impl From<Croft> for ProtoCroft {
+  /// Converts an internal domain [`Croft`] entity into its Protobuf
+  /// [`ProtoCroft`] wire format.
+  fn from(croft: Croft) -> Self {
+    ProtoCroft {
+      id: croft.id,
+      name: croft.name,
+      addr: croft.addr,
+      roles: croft.roles.into_iter().map(|r| r.to_string()).collect(),
+      tags: croft.tags,
+      joined_at: croft.joined_at,
+      is_primary: false,
+    }
   }
 }
 
@@ -90,7 +119,7 @@ impl CroftApi for Api {
     &self,
     request: Request<JoinReq>,
   ) -> Result<Response<JoinRes>, Status> {
-    let incoming = croft_from_join_req(request.into_inner())
+    let incoming = Croft::try_from(request.into_inner())
       .map_err(Status::invalid_argument)?;
 
     let server_crofts = self
@@ -99,10 +128,8 @@ impl CroftApi for Api {
       .await
       .map_err(|e| Status::internal(e.to_string()))?;
 
-    let proto_servers = server_crofts
-      .into_iter()
-      .map(proto_croft_from_croft)
-      .collect();
+    let proto_servers =
+      server_crofts.into_iter().map(ProtoCroft::from).collect();
     Ok(Response::new(JoinRes {
       server_crofts: proto_servers,
     }))
@@ -120,7 +147,7 @@ impl CroftApi for Api {
 
     let crofts = registered_crofts
       .into_iter()
-      .map(proto_croft_from_croft)
+      .map(ProtoCroft::from)
       .collect();
     Ok(Response::new(StatusRes {
       crofts,
@@ -142,7 +169,7 @@ mod tests {
       roles: vec!["server".to_string(), "worker".to_string()],
       tags: vec!["zone-a".to_string()],
     };
-    let croft = croft_from_join_req(valid_req).unwrap();
+    let croft = Croft::try_from(valid_req).unwrap();
     assert_eq!(croft.id, 42);
     assert_eq!(croft.name, "worker-01");
     assert_eq!(croft.addr, "10.0.0.1:7440");
@@ -153,7 +180,7 @@ mod tests {
       name: "   ".to_string(),
       ..Default::default()
     };
-    assert!(croft_from_join_req(empty_name).is_err());
+    assert!(Croft::try_from(empty_name).is_err());
 
     let empty_addr = JoinReq {
       name: "test".to_string(),
@@ -162,7 +189,7 @@ mod tests {
       tags: vec![],
       id: 1,
     };
-    assert!(croft_from_join_req(empty_addr).is_err());
+    assert!(Croft::try_from(empty_addr).is_err());
 
     let empty_roles = JoinReq {
       name: "test".to_string(),
@@ -171,7 +198,7 @@ mod tests {
       tags: vec![],
       id: 1,
     };
-    assert!(croft_from_join_req(empty_roles).is_err());
+    assert!(Croft::try_from(empty_roles).is_err());
 
     let invalid_role = JoinReq {
       name: "test".to_string(),
@@ -180,11 +207,11 @@ mod tests {
       tags: vec![],
       id: 1,
     };
-    assert!(croft_from_join_req(invalid_role).is_err());
+    assert!(Croft::try_from(invalid_role).is_err());
   }
 
   #[test]
-  fn proto_croft_conversion() {
+  fn proto_croft_roundtrip() {
     let domain_croft = Croft {
       id: 99,
       name: "croft-99".to_string(),
@@ -192,15 +219,16 @@ mod tests {
       roles: vec![CroftRole::Server],
       tags: vec!["fast".to_string()],
       joined_at: "2026-09-05T12:00:00Z".to_string(),
-      barn: None,
-      gate: None,
     };
 
-    let proto = proto_croft_from_croft(domain_croft.clone());
+    let proto = ProtoCroft::from(domain_croft.clone());
     assert_eq!(proto.id, 99);
     assert_eq!(proto.name, "croft-99");
     assert_eq!(proto.roles, vec!["server".to_string()]);
     assert_eq!(proto.joined_at, "2026-09-05T12:00:00Z");
+
+    let restored = Croft::try_from(proto).unwrap();
+    assert_eq!(restored, domain_croft);
   }
 
   #[tokio::test]
@@ -215,15 +243,15 @@ mod tests {
       data_dir: dir.path().to_path_buf(),
       ..Default::default()
     };
-    let croft =
-      std::sync::Arc::new(crate::croft::Croft::spawn(&config).await.unwrap());
-    let barn = croft.barn.as_ref().unwrap();
-    let self_node = BarnNode::new(croft.id, croft.addr.clone());
+    let live_croft = std::sync::Arc::new(
+      crate::croft::LiveCroft::spawn(&config).await.unwrap(),
+    );
+    let self_node = BarnNode::new(live_croft.id, live_croft.addr.clone());
     let mut members = BTreeMap::new();
     members.insert(self_node.id, self_node);
-    barn.raft().initialize(members).await.unwrap();
+    live_croft.barn.raft().initialize(members).await.unwrap();
 
-    let clerk = Clerk::spawn(croft).unwrap();
+    let clerk = Clerk::spawn(live_croft).unwrap();
     let api = Api::new(clerk);
     let _server = api.clone().into_server();
 

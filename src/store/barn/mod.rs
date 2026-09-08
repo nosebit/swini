@@ -14,7 +14,7 @@ use crate::core::proto::barn::barn::barn_api_client::BarnApiClient;
 use crate::core::proto::barn::barn::barn_api_server::BarnApiServer;
 use crate::core::proto::barn::barn::BarnMessage;
 use crate::store::{
-  ClusterStore, ItemStore, ItemStoreEvent, SpreadNode, SpreadStore, Store,
+  ItemStore, ItemStoreEvent, RanchStore, SpreadNode, SpreadStore, Store,
   StoreEvent,
 };
 use std::collections::{HashMap, HashSet};
@@ -24,8 +24,8 @@ use storage::Storage;
 use tokio::sync::{broadcast, RwLock};
 use types::TypeConfig;
 
-/// Barn is swini's replicated key/value store: the concrete implementation
-/// of `ClusterStore` (in turn `ItemStore` + `SpreadStore`) backed by a
+/// Barn is swini's replicated key/value item store: the concrete implementation
+/// of `RanchStore` (in turn `ItemStore` + `SpreadStore`) backed by a
 /// raft consensus group. See the module README for the overall design.
 #[derive(Clone)]
 pub struct Barn {
@@ -297,8 +297,8 @@ impl Barn {
           }
           Ok(item_event) = item_rx.recv() => {
             let event = match item_event {
-              ItemStoreEvent::ItemCreated(k, v) => Event::ItemCreated(k, v),
-              ItemStoreEvent::ItemPatched(k, v) => Event::ItemPatched(k, v),
+              ItemStoreEvent::ItemCreated(k, i) => Event::ItemCreated(k, i),
+              ItemStoreEvent::ItemPatched(k, i) => Event::ItemPatched(k, i),
               ItemStoreEvent::ItemRemoved(k) => Event::ItemRemoved(k),
             };
             let _ = events_tx.send(StoreEvent::Custom(event));
@@ -322,7 +322,7 @@ impl Store for Barn {
 #[async_trait::async_trait]
 impl ItemStore for Barn {
   type Key = String;
-  type Value = Vec<u8>;
+  type Item = Vec<u8>;
 
   fn slice(&self, prefix: &str) -> Self {
     Self {
@@ -355,12 +355,12 @@ impl ItemStore for Barn {
   async fn set(
     &self,
     key: &String,
-    value: Vec<u8>,
+    item: Vec<u8>,
   ) -> Result<(), Box<dyn Error>> {
     self
       .write(Action::Set {
         key: self.scoped_key(key),
-        value,
+        value: item,
       })
       .await
   }
@@ -504,8 +504,8 @@ impl SpreadStore for Barn {
   }
 }
 
-impl ClusterStore for Barn {
-  type ClusterEvent = Event;
+impl RanchStore for Barn {
+  type RanchEvent = Event;
 }
 
 #[cfg(test)]

@@ -9,39 +9,37 @@ pub mod api;
 
 pub use api::Api;
 
-use crate::croft::{Croft, CroftRole, CROFT_PREFIX};
+use crate::croft::{Croft, LiveCroft, CROFT_PREFIX};
 use crate::store::barn::Node as BarnNode;
 use crate::store::{ItemStore, SpreadNode, SpreadStore};
 use std::error::Error;
 use std::sync::Arc;
 
 /// Domain clerk governing cluster Croft registration and Croft queries across
-/// the Ranch. Staff member operating inside a [`Croft`].
+/// the Ranch. Staff member operating inside a [`LiveCroft`].
 #[derive(Clone)]
 pub struct Clerk {
   /// Reference to the operational Croft compound this clerk serves.
-  pub croft: Arc<Croft>,
+  pub croft: Arc<LiveCroft>,
 }
 
 impl Clerk {
-  /// Spawns a new [`Clerk`] staff member for the given [`Croft`], registering
-  /// its gRPC [`Api`] handler onto the Croft's [`Gate`].
+  /// Spawns a new [`Clerk`] staff member for the given [`LiveCroft`],
+  /// registering its gRPC [`Api`] handler onto the Croft's [`Gate`].
   ///
   /// # Errors
-  /// Returns an error if the gate or barn are unavailable.
-  pub fn spawn(croft: Arc<Croft>) -> Result<Self, Box<dyn Error>> {
+  /// Returns an error if registering to the gate fails.
+  pub fn spawn(croft: Arc<LiveCroft>) -> Result<Self, Box<dyn Error>> {
     let clerk = Self {
       croft: croft.clone(),
     };
-    if let Some(ref gate) = croft.gate {
-      gate.add(Api::new(clerk.clone()).into_server());
-    }
+    croft.gate.add(Api::new(clerk.clone()).into_server());
     Ok(clerk)
   }
 
   /// Instantiates a [`Clerk`] without registering to the Gate (useful for
   /// tests).
-  pub fn new(croft: Arc<Croft>) -> Self {
+  pub fn new(croft: Arc<LiveCroft>) -> Self {
     Self { croft }
   }
 
@@ -51,9 +49,8 @@ impl Clerk {
   /// # Errors
   /// Returns an error if Barn storage retrieval or deserialization fails.
   pub async fn get(&self, id: u64) -> Result<Option<Croft>, Box<dyn Error>> {
-    let barn = self.croft.barn.as_ref().ok_or("Local Barn required")?;
     let key = format!("{}{id}", CROFT_PREFIX);
-    if let Some(bytes) = barn.get(&key).await? {
+    if let Some(bytes) = self.croft.barn.get(&key).await? {
       let croft: Croft = serde_json::from_slice(&bytes)?;
       return Ok(Some(croft));
     }
@@ -67,10 +64,9 @@ impl Clerk {
   /// # Errors
   /// Returns an error if Barn scan fails.
   pub async fn list(&self) -> Result<Vec<Croft>, Box<dyn Error>> {
-    let barn = self.croft.barn.as_ref().ok_or("Local Barn required")?;
     let mut crofts = Vec::new();
     let prefix = CROFT_PREFIX.to_string();
-    let pairs = barn.list(Some(&prefix)).await?;
+    let pairs = self.croft.barn.list(Some(&prefix)).await?;
     for (_key, bytes) in pairs {
       if let Ok(croft) = serde_json::from_slice::<Croft>(&bytes) {
         crofts.push(croft);
@@ -81,7 +77,7 @@ impl Clerk {
   }
 
   /// Registers an incoming Croft: updates Barn Raft membership if a Server,
-  /// stamps `joined_at`, persists the Croft record in `croft/{id}`, and returns
+  /// stamps `joined_at`, persists the Croft in `croft/{id}`, and returns
   /// all active Server crofts.
   ///
   /// # Errors
@@ -90,10 +86,9 @@ impl Clerk {
     &self,
     mut incoming: Croft,
   ) -> Result<Vec<Croft>, Box<dyn Error>> {
-    let barn = self.croft.barn.as_ref().ok_or("Local Barn required")?;
-    if incoming.roles.contains(&CroftRole::Server) {
+    if incoming.is_server() {
       let barn_node = BarnNode::new(incoming.id, incoming.addr.clone());
-      barn.node_add(barn_node).await?;
+      self.croft.barn.node_add(barn_node).await?;
     }
 
     if incoming.joined_at.is_empty() {
@@ -102,7 +97,7 @@ impl Clerk {
 
     let key = format!("{}{}", CROFT_PREFIX, incoming.id);
     let payload = serde_json::to_vec(&incoming)?;
-    barn.set(&key, payload).await?;
+    self.croft.barn.set(&key, payload).await?;
 
     let all_crofts = self.list().await?;
     let server_crofts =
@@ -114,7 +109,7 @@ impl Clerk {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::croft::Config;
+  use crate::croft::{Config, CroftRole};
   use std::collections::BTreeMap;
   use std::net::SocketAddr;
   use tempfile::tempdir;
@@ -129,14 +124,13 @@ mod tests {
       data_dir: dir.path().to_path_buf(),
       ..Default::default()
     };
-    let croft = Arc::new(Croft::spawn(&config).await.unwrap());
-    let barn = croft.barn.as_ref().unwrap();
-    let self_node = BarnNode::new(croft.id, croft.addr.clone());
+    let live_croft = Arc::new(LiveCroft::spawn(&config).await.unwrap());
+    let self_node = BarnNode::new(live_croft.id, live_croft.addr.clone());
     let mut members = BTreeMap::new();
     members.insert(self_node.id, self_node);
-    barn.raft().initialize(members).await.unwrap();
+    live_croft.barn.raft().initialize(members).await.unwrap();
 
-    let clerk = Clerk::spawn(croft.clone()).unwrap();
+    let clerk = Clerk::spawn(live_croft.clone()).unwrap();
 
     let test_croft = Croft {
       id: 200,
@@ -145,8 +139,6 @@ mod tests {
       roles: vec![CroftRole::Worker],
       tags: vec![],
       joined_at: String::new(),
-      barn: None,
-      gate: None,
     };
 
     let _ = clerk.join(test_croft.clone()).await.unwrap();
