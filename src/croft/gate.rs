@@ -111,17 +111,16 @@ mod tests {
       data_dir: dir.path().to_path_buf(),
       ..Default::default()
     };
-    let croft =
-      std::sync::Arc::new(crate::croft::Croft::spawn(&config).await.unwrap());
+    let croft = std::sync::Arc::new(
+      crate::croft::LiveCroft::spawn(&config).await.unwrap(),
+    );
     let clerk = Clerk::new(croft.clone());
     let handler = CroftApiHandler::new(clerk);
 
     // Add first service (transition Builder -> Router)
     gate.add(CroftApiServer::new(handler));
     // Add second service (Router -> Router)
-    if let Some(ref barn) = croft.barn {
-      gate.add(barn.api());
-    }
+    gate.add(croft.barn.api());
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let bound_addr = listener.local_addr().unwrap();

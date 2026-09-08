@@ -1,10 +1,15 @@
+//! Event definitions and conversions emitted by the Barn storage engine.
+//!
+//! Exposes [`Event`], uniting item lifecycle mutations and Raft membership
+//! updates into a unified stream for subscribers.
+
 use crate::store::{ItemStoreEvent, SpreadStoreEvent};
 
 use super::raft;
 
 /// The event type Barn emits. A flat enum rather than a wrapper around
 /// `ItemStoreEvent`/`SpreadStoreEvent` — the `TryFrom` impls below
-/// reconstruct the generic wrapped shape only where `ClusterStore`'s
+/// reconstruct the generic wrapped shape only where `RanchStore`'s
 /// `TryInto` bounds require it.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
@@ -21,8 +26,8 @@ impl TryFrom<Event> for ItemStoreEvent<String, Vec<u8>> {
 
   fn try_from(event: Event) -> Result<Self, Self::Error> {
     match event {
-      Event::ItemCreated(k, v) => Ok(ItemStoreEvent::ItemCreated(k, v)),
-      Event::ItemPatched(k, v) => Ok(ItemStoreEvent::ItemPatched(k, v)),
+      Event::ItemCreated(k, i) => Ok(ItemStoreEvent::ItemCreated(k, i)),
+      Event::ItemPatched(k, i) => Ok(ItemStoreEvent::ItemPatched(k, i)),
       Event::ItemRemoved(k) => Ok(ItemStoreEvent::ItemRemoved(k)),
       _ => Err(()),
     }

@@ -11,9 +11,8 @@ pub use state::RegentState;
 use crate::core::proto::croft::croft_api_client::CroftApiClient;
 use crate::core::proto::croft::JoinReq;
 use crate::core::telemetry;
-use crate::croft::clerk::api::croft_from_join_req;
 use crate::croft::config::{self, Config, DEFAULT_NAME};
-use crate::croft::{Clerk as CroftClerk, Croft};
+use crate::croft::{Clerk as CroftClerk, Croft, LiveCroft};
 use crate::store::barn::Node as BarnNode;
 use crate::store::{SpreadNode, SpreadStore};
 use std::error::Error;
@@ -46,7 +45,7 @@ pub async fn start(
   };
   state.save()?;
 
-  let croft = Arc::new(Croft::spawn(&config).await?);
+  let croft = Arc::new(LiveCroft::spawn(&config).await?);
 
   if !config.join_addresses.is_empty() {
     let _ = bootstrap_join(&config, &croft).await;
@@ -58,14 +57,10 @@ pub async fn start(
   let _ = croft.persist().await;
 
   let bind_addr = config.addr;
-  let server_handle = tokio::spawn({
-    let croft = croft.clone();
-    async move {
-      if let Some(ref gate) = croft.gate {
-        if let Err(e) = gate.listen(bind_addr).await {
-          tracing::error!(error = %e, "Gate server terminated unexpectedly");
-        }
-      }
+  let gate = croft.gate.clone();
+  let server_handle = tokio::spawn(async move {
+    if let Err(e) = gate.listen(bind_addr).await {
+      tracing::error!(error = %e, "Gate server terminated unexpectedly");
     }
   });
 
@@ -253,16 +248,7 @@ async fn dial_join(
   let server_crofts = res
     .server_crofts
     .into_iter()
-    .filter_map(|c| {
-      croft_from_join_req(JoinReq {
-        id: c.id,
-        name: c.name,
-        addr: c.addr,
-        roles: c.roles,
-        tags: c.tags,
-      })
-      .ok()
-    })
+    .filter_map(|c| Croft::try_from(c).ok())
     .collect();
 
   Ok(server_crofts)
@@ -276,7 +262,7 @@ async fn dial_join(
 /// contacted.
 pub async fn bootstrap_join(
   config: &Config,
-  croft: &Croft,
+  croft: &LiveCroft,
 ) -> Result<(), Box<dyn Error>> {
   for peer in &config.join_addresses {
     match dial_join(peer, croft).await {
@@ -286,9 +272,7 @@ pub async fn bootstrap_join(
             .into_iter()
             .map(|c| BarnNode::new(c.id, c.addr))
             .collect();
-          if let Some(ref barn) = croft.barn {
-            barn.node_cache_set(barn_nodes).await?;
-          }
+          croft.barn.node_cache_set(barn_nodes).await?;
         }
         return Ok(());
       }
@@ -318,7 +302,7 @@ mod tests {
       join_addresses: vec!["127.0.0.1:1".to_string()],
       ..Default::default()
     };
-    let croft = Croft::spawn(&config).await.unwrap();
+    let croft = LiveCroft::spawn(&config).await.unwrap();
 
     let res = bootstrap_join(&config, &croft).await;
     assert!(res.is_err());
@@ -338,20 +322,25 @@ mod tests {
       roles: vec![CroftRole::Server],
       ..Default::default()
     };
-    let server_croft = Arc::new(Croft::spawn(&server_config).await.unwrap());
-    let barn = server_croft.barn.as_ref().unwrap();
+    let server_croft =
+      Arc::new(LiveCroft::spawn(&server_config).await.unwrap());
     let self_node = BarnNode::new(server_croft.id, server_croft.addr.clone());
     let mut members = std::collections::BTreeMap::new();
     members.insert(self_node.id, self_node);
-    barn.raft().initialize(members).await.unwrap();
+    server_croft.barn.raft().initialize(members).await.unwrap();
 
     let server_clerk = CroftClerk::spawn(server_croft.clone()).unwrap();
-    let _ = server_clerk
-      .join(server_croft.as_ref().clone())
-      .await
-      .unwrap();
+    let server_croft_base = Croft {
+      id: server_croft.id,
+      name: server_croft.name.clone(),
+      addr: server_croft.addr.clone(),
+      roles: server_croft.roles.clone(),
+      tags: server_croft.tags.clone(),
+      joined_at: String::new(),
+    };
+    let _ = server_clerk.join(server_croft_base).await.unwrap();
 
-    let gate_server = server_croft.gate.clone().unwrap();
+    let gate_server = server_croft.gate.clone();
     let server_handle = tokio::spawn(async move {
       let _ = gate_server.listen(server_addr).await;
     });
@@ -373,7 +362,7 @@ mod tests {
       join_addresses: vec![format!("http://{}", server_addr)],
       ..Default::default()
     };
-    let worker_croft = Croft::spawn(&worker_config).await.unwrap();
+    let worker_croft = LiveCroft::spawn(&worker_config).await.unwrap();
 
     let join_res =
       dial_join(&format!("http://{}", server_addr), &worker_croft).await;
