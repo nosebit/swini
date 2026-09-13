@@ -104,6 +104,34 @@ impl Clerk {
       all_crofts.into_iter().filter(|c| c.is_server()).collect();
     Ok(server_crofts)
   }
+
+  /// Queries the domain status of a specific Croft by name, optionally
+  /// sampling live telemetry if requested.
+  ///
+  /// # Errors
+  /// Returns an error if querying Barn storage fails.
+  pub async fn status(
+    &self,
+    name: &str,
+    live: bool,
+  ) -> Result<
+    Option<(Croft, Option<crate::croft::CroftTelemetry>)>,
+    Box<dyn Error>,
+  > {
+    let all = self.list().await?;
+    let found = all.into_iter().find(|c| c.name == name);
+    match found {
+      Some(croft) => {
+        let telemetry = if live {
+          Some(crate::croft::CroftTelemetry::sample())
+        } else {
+          None
+        };
+        Ok(Some((croft, telemetry)))
+      }
+      None => Ok(None),
+    }
+  }
 }
 
 #[cfg(test)]
@@ -139,6 +167,7 @@ mod tests {
       roles: vec![CroftRole::Worker],
       tags: vec![],
       joined_at: String::new(),
+      resources: Default::default(),
     };
 
     let _ = clerk.join(test_croft.clone()).await.unwrap();
@@ -149,5 +178,19 @@ mod tests {
     let all = clerk.list().await.unwrap();
     assert_eq!(all.len(), 1);
     assert_eq!(all[0].name, "worker-200");
+
+    let status_no_live = clerk.status("worker-200", false).await.unwrap();
+    assert!(status_no_live.is_some());
+    let (found_croft, telemetry) = status_no_live.unwrap();
+    assert_eq!(found_croft.id, 200);
+    assert!(telemetry.is_none());
+
+    let status_live = clerk.status("worker-200", true).await.unwrap();
+    assert!(status_live.is_some());
+    let (_found_croft, telemetry) = status_live.unwrap();
+    assert!(telemetry.is_some());
+
+    let missing = clerk.status("nonexistent", false).await.unwrap();
+    assert!(missing.is_none());
   }
 }

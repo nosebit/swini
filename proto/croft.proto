@@ -4,26 +4,39 @@ package swini.croft;
 
 service CroftApi {
   rpc Join(JoinReq) returns (JoinRes);
+  rpc List(ListReq) returns (ListRes);
   rpc Status(StatusReq) returns (StatusRes);
 }
 
-message JoinReq {
-  uint64 id = 1;
-  string name = 2;
-  string addr = 3;
-  repeated string roles = 4;
-  repeated string tags = 5;
+message CroftResources {
+  uint64 cpu_total = 1;
+  uint64 cpu_yardable = 2;
+  uint64 cpu_reserved = 3;
+  uint64 mem_total = 4;
+  uint64 mem_yardable = 5;
+  uint64 mem_reserved = 6;
 }
 
-message JoinRes {
-  repeated Croft server_crofts = 1;
-}
+message ListReq {}
 
-message StatusReq {}
-
-message StatusRes {
+message ListRes {
   repeated Croft crofts = 1;
   uint64 primary_id = 2;
+}
+
+message StatusReq {
+  string name = 1;
+  bool live = 2;
+}
+
+message CroftTelemetry {
+  uint64 mem_used = 1;
+  float cpu_used = 2;
+}
+
+message StatusRes {
+  Croft croft = 1;
+  CroftTelemetry telemetry = 2;
 }
 
 message Croft {
@@ -34,4 +47,18 @@ message Croft {
   repeated string tags = 5;
   string joined_at = 6;
   bool is_primary = 7;
+  CroftResources resources = 8;
+}
+
+message JoinReq {
+  uint64 id = 1;
+  string name = 2;
+  string addr = 3;
+  repeated string roles = 4;
+  repeated string tags = 5;
+  CroftResources resources = 6;
+}
+
+message JoinRes {
+  repeated Croft server_crofts = 1;
 }

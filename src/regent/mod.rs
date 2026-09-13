@@ -15,6 +15,7 @@ use crate::croft::config::{self, Config, DEFAULT_NAME};
 use crate::croft::{Clerk as CroftClerk, Croft, LiveCroft};
 use crate::store::barn::Node as BarnNode;
 use crate::store::{SpreadNode, SpreadStore};
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -47,7 +48,12 @@ pub async fn start(
 
   let croft = Arc::new(LiveCroft::spawn(&config).await?);
 
-  if !config.join_addresses.is_empty() {
+  if config.join_addresses.is_empty() && croft.is_server() {
+    let self_node = BarnNode::new(croft.id, croft.addr.clone());
+    let mut members = BTreeMap::new();
+    members.insert(self_node.id, self_node);
+    let _ = croft.barn.raft().initialize(members).await;
+  } else if !config.join_addresses.is_empty() {
     let _ = bootstrap_join(&config, &croft).await;
   }
 
@@ -242,6 +248,7 @@ async fn dial_join(
     addr: croft.addr.clone(),
     roles: croft.roles.iter().map(|r| r.to_string()).collect(),
     tags: croft.tags.clone(),
+    resources: Some(croft.resources.clone().into()),
   };
 
   let res = client.join(req).await?.into_inner();
@@ -337,6 +344,7 @@ mod tests {
       roles: server_croft.roles.clone(),
       tags: server_croft.tags.clone(),
       joined_at: String::new(),
+      resources: server_croft.resources.clone(),
     };
     let _ = server_clerk.join(server_croft_base).await.unwrap();
 

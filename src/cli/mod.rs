@@ -4,10 +4,15 @@
 //! endpoint address resolution in [`resolve_api_url`].
 //!
 //! Submodules:
+//! - [`croft`]: Scoped subcommands for inspecting and managing Crofts.
 //! - [`regent`]: Scoped subcommands for managing local Regent lifecycle.
+//! - [`status`]: Cluster-wide status query and summary table presentation.
 
+pub mod croft;
 mod regent;
+pub mod status;
 
+pub(crate) use croft::Command as CroftCommand;
 pub(crate) use regent::Command as RegentCommand;
 
 use crate::croft::config;
@@ -26,6 +31,13 @@ pub struct Cli {
 /// Top-level subcommand dispatch.
 #[derive(Subcommand, Debug, PartialEq, Eq)]
 pub enum Command {
+  /// Displays a formatted summary table of all Crofts across the Ranch
+  Status,
+  /// Scoped subcommands for inspecting and managing Crofts
+  Croft {
+    #[command(subcommand)]
+    command: CroftCommand,
+  },
   /// Manages the local Swini Regent process
   Regent {
     #[command(subcommand)]
@@ -98,6 +110,8 @@ fn resolve_api_url_internal(
 /// Dispatches pre-parsed CLI commands inside an active async runtime.
 async fn dispatch(cli: Cli) -> Result<(), Box<dyn Error>> {
   match cli.command {
+    Command::Status => status::run().await,
+    Command::Croft { command } => croft::run(command).await,
     Command::Regent { command } => regent::run(command).await,
   }
 }
@@ -161,6 +175,25 @@ mod tests {
         command: RegentCommand::Start {
           config: Some(PathBuf::from("custom.yml")),
           detached: true,
+        }
+      }
+    );
+  }
+
+  #[test]
+  fn cli_parse_top_level_status_and_croft_commands() {
+    let cli = Cli::try_parse_from(["swini", "status"]).unwrap();
+    assert_eq!(cli.command, Command::Status);
+
+    let cli =
+      Cli::try_parse_from(["swini", "croft", "status", "node-1", "--live"])
+        .unwrap();
+    assert_eq!(
+      cli.command,
+      Command::Croft {
+        command: CroftCommand::Status {
+          name: "node-1".to_string(),
+          live: true,
         }
       }
     );

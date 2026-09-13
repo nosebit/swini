@@ -16,11 +16,13 @@
 pub mod clerk;
 pub mod config;
 pub mod gate;
+pub mod resources;
 pub mod types;
 
 pub use clerk::Clerk;
 pub use config::Config;
 pub use gate::Gate;
+pub use resources::{CroftResources, CroftTelemetry};
 pub use types::{Croft, CroftRole};
 
 use crate::store::barn::{Barn, Config as BarnConfig};
@@ -100,6 +102,7 @@ impl LiveCroft {
       roles: config.roles.clone(),
       tags: config.tags.clone(),
       joined_at: chrono::Utc::now().to_rfc3339(),
+      resources: CroftResources::probe(),
     };
 
     Ok(Self { base, barn, gate })
@@ -125,12 +128,27 @@ impl LiveCroft {
   /// Persists this Croft's base data directly into the local Barn storage under
   /// `croft/{id}`.
   ///
+  /// Retries write attempts briefly to allow leader election to complete
+  /// when bootstrapping a fresh cluster.
+  ///
   /// # Errors
-  /// Returns an error if serialization fails or Barn write fails.
+  /// Returns an error if serialization fails or Barn write fails after all retries.
   pub async fn persist(&self) -> Result<(), Box<dyn Error>> {
     let key = format!("{}{}", CROFT_PREFIX, self.id);
     let payload = serde_json::to_vec(&self.base)?;
-    self.barn.set(&key, payload).await?;
+    let mut last_err = None;
+    for _ in 0..30 {
+      match self.barn.set(&key, payload.clone()).await {
+        Ok(()) => return Ok(()),
+        Err(e) => {
+          last_err = Some(e);
+          tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+      }
+    }
+    if let Some(e) = last_err {
+      return Err(e);
+    }
     Ok(())
   }
 }
