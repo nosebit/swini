@@ -78,6 +78,7 @@ traffic.
 | :----------------------------- | :-------------------------------------------------------------------------------------------------- |
 | **[`mod.rs`](./mod.rs)**       | Active runtime compound [`LiveCroft`](./mod.rs).                                                    |
 | **[`types.rs`](./types.rs)**   | Base domain entity ([`Croft`](./types.rs)) and role definitions ([`CroftRole`](./types.rs)).        |
+| **[`resources.rs`](./resources.rs)** | Resource models ([`CroftResources`](./resources.rs)) and live telemetry ([`CroftTelemetry`](./resources.rs)). |
 | **[`config.rs`](./config.rs)** | Configuration loading, YAML merging, and path resolutions ([`Config`](./config.rs)).                |
 | **[`gate.rs`](./gate.rs)**     | Network gateway [`Gate`](./gate.rs) managing the underlying tonic gRPC server and router.           |
 | **[`clerk/`](./clerk/mod.rs)** | Domain staff worker ([`Clerk`](./clerk/mod.rs)) and gRPC service handler ([`Api`](./clerk/api.rs)). |

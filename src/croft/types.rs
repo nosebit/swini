@@ -6,6 +6,7 @@
 //! execution), and [`Croft`], the persistent domain entity holding a Croft's
 //! identity and metadata.
 
+use crate::croft::resources::CroftResources;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
@@ -69,6 +70,8 @@ pub struct Croft {
   pub tags: Vec<String>,
   /// ISO-8601 UTC timestamp when the Croft joined the Ranch.
   pub joined_at: String,
+  /// Hardware resource capacity and active workload allocations.
+  pub resources: CroftResources,
 }
 
 impl Croft {
@@ -120,10 +123,19 @@ mod tests {
       roles: vec![CroftRole::Worker],
       tags: vec!["zone-a".to_string()],
       joined_at: "2026-09-05T12:00:00Z".to_string(),
+      resources: CroftResources {
+        cpu_total: 16_000_000_000,
+        cpu_yardable: 14_400_000_000,
+        cpu_reserved: 0,
+        mem_total: 16_000_000_000,
+        mem_yardable: 14_400_000_000,
+        mem_reserved: 0,
+      },
     };
 
     assert!(!croft.is_server());
     assert!(croft.is_worker());
+    assert_eq!(croft.resources.cpu_available(), 14_400_000_000);
 
     let json = serde_json::to_string(&croft).unwrap();
     let deserialized: Croft = serde_json::from_str(&json).unwrap();
