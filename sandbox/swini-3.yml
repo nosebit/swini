@@ -7,6 +7,9 @@ roles:
 tags:
   - zone-b
   - tertiary
+resources:
+  cpu: 2 GHz
+  mem: 2 GB
 join_addresses:
   - 127.0.0.1:7441
   - 127.0.0.1:7442

@@ -3,41 +3,47 @@
 //! Exposes [`Command`] for scoped Croft commands (`status`) and delegates
 //! execution via [`run`].
 
-use crate::core::format::{format_bytes, format_hertz};
+use crate::core::format::{format_cpu, format_memory};
 use crate::core::proto::croft::croft_api_client::CroftApiClient;
 use crate::core::proto::croft::{Croft as ProtoCroft, StatusReq};
 use clap::Subcommand;
 use std::error::Error;
 
-/// Scoped subcommands for inspecting and managing Crofts on the Ranch.
+/// Scoped subcommands under `swini croft`.
 #[derive(Subcommand, Debug, PartialEq, Eq)]
 pub enum Command {
-  /// Inspects a specific Croft's metadata, Barn resources, and live telemetry
+  /// Displays detailed information and resource allocations for a Croft
   Status {
-    /// Target Croft name
+    /// Name of the Croft to inspect
     name: String,
-    /// Include instantaneous live host telemetry
-    #[arg(short, long)]
+    /// Samples live telemetry (CPU/Memory) directly from the host
+    #[arg(long)]
     live: bool,
   },
 }
 
-/// Executes Croft subcommands by delegating to specific command handlers.
+/// Dispatches `swini croft` commands.
 ///
 /// # Errors
-/// Returns an error if subcommand execution fails.
-pub async fn run(cmd: Command) -> Result<(), Box<dyn Error>> {
+/// Returns an error if the subcommand execution fails.
+pub async fn run(
+  cmd: Command,
+  endpoint: tonic::transport::Endpoint,
+) -> Result<(), Box<dyn Error>> {
   match cmd {
-    Command::Status { name, live } => status(name, live).await,
+    Command::Status { name, live } => status(name, live, endpoint).await,
   }
 }
 
 /// Queries and displays status for a specific Croft.
 ///
 /// # Errors
-/// Returns an error if endpoint resolution, gRPC connection, or query fails.
-pub async fn status(name: String, live: bool) -> Result<(), Box<dyn Error>> {
-  let endpoint = crate::cli::resolve_api_url(Some(&name))?;
+/// Returns an error if gRPC connection or query fails.
+pub async fn status(
+  name: String,
+  live: bool,
+  endpoint: tonic::transport::Endpoint,
+) -> Result<(), Box<dyn Error>> {
   let mut client = CroftApiClient::connect(endpoint).await?;
 
   let res = client
@@ -54,18 +60,31 @@ pub async fn status(name: String, live: bool) -> Result<(), Box<dyn Error>> {
   if let Some(telemetry) = res.telemetry {
     println!();
     println!("LIVE TELEMETRY");
-    println!("Live CPU Usage:    {:.1}%", telemetry.cpu_used);
-    let total_mem = croft.resources.as_ref().map(|r| r.mem_total).unwrap_or(1);
-    let percent = if total_mem > 0 {
-      (telemetry.mem_used as f64 / total_mem as f64) * 100.0
+    let total_cpu =
+      croft.resources.as_ref().map(|r| r.cpu_total).unwrap_or(0.0);
+    let cpu_percent = if total_cpu > 0.0 {
+      (telemetry.cpu_used / total_cpu) * 100.0
+    } else {
+      0.0
+    };
+    println!(
+      "Live CPU Used:     {} / {} ({:.1}%)",
+      format_cpu(telemetry.cpu_used),
+      format_cpu(total_cpu),
+      cpu_percent
+    );
+    let total_mem =
+      croft.resources.as_ref().map(|r| r.mem_total).unwrap_or(0.0);
+    let mem_percent = if total_mem > 0.0 {
+      (telemetry.mem_used / total_mem) * 100.0
     } else {
       0.0
     };
     println!(
       "Live Memory Used:  {} / {} ({:.1}%)",
-      format_bytes(telemetry.mem_used),
-      format_bytes(total_mem),
-      percent
+      format_memory(telemetry.mem_used),
+      format_memory(total_mem),
+      mem_percent
     );
   }
 
@@ -90,20 +109,20 @@ pub fn display_croft_detail(croft: &ProtoCroft) {
   if let Some(r) = &croft.resources {
     println!();
     println!("RESOURCES (BARN)");
-    println!("CPU Total:     {}", format_hertz(r.cpu_total));
-    println!("CPU Yardable:  {}", format_hertz(r.cpu_yardable));
-    println!("CPU Reserved:  {}", format_hertz(r.cpu_reserved));
+    println!("CPU Total:     {}", format_cpu(r.cpu_total));
+    println!("CPU Yardable:  {}", format_cpu(r.cpu_yardable));
+    println!("CPU Reserved:  {}", format_cpu(r.cpu_reserved));
     println!(
       "CPU Available: {}",
-      format_hertz(r.cpu_yardable.saturating_sub(r.cpu_reserved))
+      format_cpu((r.cpu_yardable - r.cpu_reserved).max(0.0))
     );
     println!();
-    println!("Memory Total:     {}", format_bytes(r.mem_total));
-    println!("Memory Yardable:  {}", format_bytes(r.mem_yardable));
-    println!("Memory Reserved:  {}", format_bytes(r.mem_reserved));
+    println!("Memory Total:     {}", format_memory(r.mem_total));
+    println!("Memory Yardable:  {}", format_memory(r.mem_yardable));
+    println!("Memory Reserved:  {}", format_memory(r.mem_reserved));
     println!(
       "Memory Available: {}",
-      format_bytes(r.mem_yardable.saturating_sub(r.mem_reserved))
+      format_memory((r.mem_yardable - r.mem_reserved).max(0.0))
     );
   }
 }
@@ -155,12 +174,12 @@ mod tests {
       joined_at: "2026-09-08T12:00:00Z".to_string(),
       is_primary: false,
       resources: Some(ProtoCroftResources {
-        cpu_total: 16_000_000_000,
-        cpu_yardable: 14_400_000_000,
-        cpu_reserved: 2_000_000_000,
-        mem_total: 32_000_000_000,
-        mem_yardable: 28_800_000_000,
-        mem_reserved: 4_000_000_000,
+        cpu_total: 16000.0,
+        cpu_yardable: 14400.0,
+        cpu_reserved: 2000.0,
+        mem_total: 32000.0,
+        mem_yardable: 28800.0,
+        mem_reserved: 4000.0,
       }),
     };
 

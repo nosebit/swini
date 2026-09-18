@@ -116,7 +116,7 @@ tags:
     .stdout(predicate::str::contains("Croft: cluster-status-croft"))
     .stdout(predicate::str::contains("RESOURCES (BARN)"))
     .stdout(predicate::str::contains("LIVE TELEMETRY"))
-    .stdout(predicate::str::contains("Live CPU Usage:"))
+    .stdout(predicate::str::contains("Live CPU Used:"))
     .stdout(predicate::str::contains("Live Memory Used:"));
 
   // 5. Query status of nonexistent node

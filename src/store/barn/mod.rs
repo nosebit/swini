@@ -21,7 +21,7 @@ use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::sync::Arc;
 use storage::Storage;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, watch, RwLock};
 use types::TypeConfig;
 
 /// Barn is swini's replicated key/value item store: the concrete implementation
@@ -34,6 +34,7 @@ pub struct Barn {
   storage: Storage,
   events_tx: broadcast::Sender<StoreEvent<Event>>,
   node_cache: Arc<RwLock<Vec<raft::Node>>>,
+  is_leader_tx: Arc<watch::Sender<bool>>,
   /// Non-empty when this handle was returned by `slice`; every key this
   /// handle touches is transparently prefixed with it.
   prefix: String,
@@ -73,9 +74,12 @@ impl Barn {
 
     let self_node = raft::Node::new(config.id, config.addr);
     let (events_tx, _) = broadcast::channel(1024);
-    let node_cache = Arc::new(RwLock::new(Self::nodes_from_metrics(
-      &raft.metrics().borrow(),
-    )));
+    let initial_metrics = raft.metrics().borrow().clone();
+    let initial_is_leader = initial_metrics.current_leader == Some(config.id);
+    let (is_leader_tx, _) = watch::channel(initial_is_leader);
+    let is_leader_tx = Arc::new(is_leader_tx);
+    let node_cache =
+      Arc::new(RwLock::new(Self::nodes_from_metrics(&initial_metrics)));
 
     let barn = Self {
       self_node,
@@ -83,6 +87,7 @@ impl Barn {
       storage,
       events_tx: events_tx.clone(),
       node_cache,
+      is_leader_tx,
       prefix: String::new(),
     };
 
@@ -125,13 +130,14 @@ impl Barn {
       .collect()
   }
 
-  async fn is_leader(&self) -> bool {
-    self
-      .node_cache
-      .read()
-      .await
-      .iter()
-      .any(|node| node.id == self.self_node.id && node.is_leader)
+  /// Returns a watch receiver notifying on leadership changes for this node.
+  pub fn watch_is_leader(&self) -> watch::Receiver<bool> {
+    self.is_leader_tx.subscribe()
+  }
+
+  /// Returns `true` if this node is currently the elected Raft leader.
+  pub async fn is_leader(&self) -> bool {
+    *self.is_leader_tx.borrow()
   }
 
   /// The `Node` entry for the current raft leader, read from `node_cache`
@@ -153,9 +159,14 @@ impl Barn {
   }
 
   fn dial(node: &raft::Node) -> BarnApiClient<tonic::transport::Channel> {
+    let timeouts = crate::croft::config::Config::load(None)
+      .map(|c| c.timeouts)
+      .unwrap_or_default();
     let addr = format!("http://{}", node.api_addr);
     let channel = tonic::transport::Endpoint::from_shared(addr)
       .expect("node api_addr must be a valid URI")
+      .connect_timeout(timeouts.connect)
+      .timeout(timeouts.request)
       .connect_lazy();
     BarnApiClient::new(channel)
   }
@@ -264,6 +275,8 @@ impl Barn {
     let mut item_rx = self.storage.subscribe();
     let events_tx = self.events_tx.clone();
     let node_cache = self.node_cache.clone();
+    let is_leader_tx = self.is_leader_tx.clone();
+    let self_id = self.self_node.id;
 
     tokio::spawn(async move {
       let mut last_nodes: HashMap<raft::NodeId, raft::Node> = HashMap::new();
@@ -272,6 +285,15 @@ impl Barn {
         tokio::select! {
           Ok(()) = metrics_rx.changed() => {
             let metrics = metrics_rx.borrow().clone();
+            let is_leader = metrics.current_leader == Some(self_id);
+            let _ = is_leader_tx.send_if_modified(|val| {
+              if *val != is_leader {
+                *val = is_leader;
+                true
+              } else {
+                false
+              }
+            });
             let nodes = Barn::nodes_from_metrics(&metrics);
             let current: HashMap<raft::NodeId, raft::Node> =
               nodes.iter().map(|node| (node.id, node.clone())).collect();
@@ -336,20 +358,38 @@ impl ItemStore for Barn {
       key: self.scoped_key(key),
       allow_stale: false,
     };
-    let result = if self.is_leader().await {
-      self.local_read(action).await
-    } else {
-      let leader = self
-        .current_leader_node()
-        .await
-        .ok_or("no known raft leader")?;
-      self.forward_read(&leader, action).await?
-    };
-    match result {
-      ReadResult::GetResult(value) => Ok(value),
-      ReadResult::Error(err) => Err(err.into()),
-      _ => unreachable!("Get always returns GetResult or Error"),
+    let mut last_err = "no known raft leader".to_string();
+    for _ in 0..30 {
+      let result = if self.is_leader().await {
+        self.local_read(action.clone()).await
+      } else if let Some(leader) = self.current_leader_node().await {
+        match self
+          .forward_read(&leader, action.clone())
+          .await
+          .map_err(|e| e.to_string())
+        {
+          Ok(res) => res,
+          Err(e_str) => {
+            last_err = e_str;
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            continue;
+          }
+        }
+      } else {
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        continue;
+      };
+
+      match result {
+        ReadResult::GetResult(value) => return Ok(value),
+        ReadResult::Error(err) => {
+          last_err = err;
+          tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+        _ => unreachable!("Get always returns GetResult or Error"),
+      }
     }
+    Err(last_err.into())
   }
 
   async fn set(
@@ -381,25 +421,45 @@ impl ItemStore for Barn {
     let action = ReadAction::List {
       prefix: Some(scoped),
     };
-    let result = if self.is_leader().await {
-      self.local_read(action).await
-    } else {
-      let leader = self
-        .current_leader_node()
-        .await
-        .ok_or("no known raft leader")?;
-      self.forward_read(&leader, action).await?
-    };
-    match result {
-      ReadResult::ListResult(pairs) => Ok(
-        pairs
-          .into_iter()
-          .map(|(k, v)| (k[self.prefix.len()..].to_string(), v))
-          .collect(),
-      ),
-      ReadResult::Error(err) => Err(err.into()),
-      _ => unreachable!("List always returns ListResult or Error"),
+    let mut last_err = "no known raft leader".to_string();
+    for _ in 0..30 {
+      let result = if self.is_leader().await {
+        self.local_read(action.clone()).await
+      } else if let Some(leader) = self.current_leader_node().await {
+        match self
+          .forward_read(&leader, action.clone())
+          .await
+          .map_err(|e| e.to_string())
+        {
+          Ok(res) => res,
+          Err(e_str) => {
+            last_err = e_str;
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            continue;
+          }
+        }
+      } else {
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        continue;
+      };
+
+      match result {
+        ReadResult::ListResult(pairs) => {
+          return Ok(
+            pairs
+              .into_iter()
+              .map(|(k, v)| (k[self.prefix.len()..].to_string(), v))
+              .collect(),
+          );
+        }
+        ReadResult::Error(err) => {
+          last_err = err;
+          tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+        _ => unreachable!("List always returns ListResult or Error"),
+      }
     }
+    Err(last_err.into())
   }
 }
 
@@ -408,19 +468,37 @@ impl Barn {
   /// leader, or by forwarding to the resolved leader otherwise. Shared by
   /// `ItemStore::set`/`delete`.
   async fn write(&self, action: Action) -> Result<(), Box<dyn Error>> {
-    let result = if self.is_leader().await {
-      self.local_write(action).await
-    } else {
-      let leader = self
-        .current_leader_node()
-        .await
-        .ok_or("no known raft leader")?;
-      self.forward_write(&leader, action).await?
-    };
-    match result {
-      ActionResult::Success => Ok(()),
-      ActionResult::Error(err) => Err(err.into()),
+    let mut last_err = "no known raft leader".to_string();
+    for _ in 0..30 {
+      let result = if self.is_leader().await {
+        self.local_write(action.clone()).await
+      } else if let Some(leader) = self.current_leader_node().await {
+        match self
+          .forward_write(&leader, action.clone())
+          .await
+          .map_err(|e| e.to_string())
+        {
+          Ok(res) => res,
+          Err(e_str) => {
+            last_err = e_str;
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            continue;
+          }
+        }
+      } else {
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        continue;
+      };
+
+      match result {
+        ActionResult::Success => return Ok(()),
+        ActionResult::Error(err) => {
+          last_err = err;
+          tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+      }
     }
+    Err(last_err.into())
   }
 }
 
@@ -458,13 +536,31 @@ impl SpreadStore for Barn {
       self.raft.initialize(members).await?;
     } else {
       self.raft.add_learner(node.id, node.clone(), true).await?;
-      self
-        .raft
-        .change_membership(
-          openraft::ChangeMembers::AddVoterIds([node.id].into()),
-          true,
-        )
-        .await?;
+      let mut new_voters = std::collections::BTreeMap::new();
+      new_voters.insert(node.id, node);
+      let mut last_err = None;
+      for _ in 0..30 {
+        match self
+          .raft
+          .change_membership(
+            openraft::ChangeMembers::AddVoters(new_voters.clone()),
+            true,
+          )
+          .await
+        {
+          Ok(_) => {
+            last_err = None;
+            break;
+          }
+          Err(e) => {
+            last_err = Some(e);
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+          }
+        }
+      }
+      if let Some(err) = last_err {
+        return Err(err.into());
+      }
     }
     Ok(())
   }

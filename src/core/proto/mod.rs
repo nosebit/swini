@@ -6,3 +6,4 @@
 
 pub mod barn;
 pub mod croft;
+pub mod pig;

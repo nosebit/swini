@@ -99,9 +99,14 @@ impl<C: RaftTypeConfig<Node = Node>> RaftNetworkFactory<C>
     _target: C::NodeId,
     node: &Node,
   ) -> NetworkConnection<C> {
+    let timeouts = crate::croft::config::Config::load(None)
+      .map(|c| c.timeouts)
+      .unwrap_or_default();
     let target_addr = format!("http://{}", node.api_addr);
     let channel = tonic::transport::Endpoint::from_shared(target_addr)
       .expect("node api_addr must be a valid URI")
+      .connect_timeout(timeouts.connect)
+      .timeout(timeouts.raft)
       .connect_lazy();
 
     NetworkConnection {

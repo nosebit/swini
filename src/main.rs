@@ -1,8 +1,11 @@
 mod cli;
 mod core;
 mod croft;
+mod drover;
+mod pig;
 mod regent;
 mod store;
+mod supervisor;
 
 use std::error::Error;
 
