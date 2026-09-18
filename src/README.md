@@ -7,11 +7,17 @@ The Swini source code is organized into the following modules:
 - **[`core/`](./core/README.md)**: Foundational telemetry and protobuf types.
 - **[`croft/`](./croft/README.md)**: Host operational compound uniting machine
   identity, configuration, storage `Barn`, network `Gate`, and domain `Clerk`.
+- **[`drover/`](./drover/README.md)**: Cluster-level workload orchestrator and
+  scheduling engine.
+- **[`pig/`](./pig/README.md)**: Workload domain models, execution state, and
+  front-office configuration services.
 - **[`regent/`](./regent/README.md)**: Host supervisor process managing local
   Croft lifecycle, process detachment, signal handling, and state persistence
   (`regent.json`).
 - **[`store/`](./store/README.md)**: Distributed and local storage engines
   (including Raft consensus engine `Barn`).
+- **[`supervisor/`](./supervisor/README.md)**: Local node task execution driver
+  and process supervision actor.
 
 In essence, Swini operates a cluster of machines as a **Ranch**, where each
 machine acts as an operational **Croft** (housing its identity, **Barn**, and

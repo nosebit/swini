@@ -56,7 +56,7 @@ impl FromStr for CroftRole {
 }
 
 /// Persistent domain entity representing a Croft's identity and metadata.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct Croft {
   /// Unique 64-bit identifier for this Croft.
   pub id: u64,
@@ -64,23 +64,23 @@ pub struct Croft {
   pub name: String,
   /// Canonical network address (e.g., "127.0.0.1:7440") where Gate listens.
   pub addr: String,
-  /// Assigned roles in the cluster (Server, Worker).
+  /// Operational roles assigned to this Croft (Server, Worker).
   pub roles: Vec<CroftRole>,
-  /// Informational grouping tags associated with the Croft.
+  /// User-defined tags and capability metadata.
   pub tags: Vec<String>,
-  /// ISO-8601 UTC timestamp when the Croft joined the Ranch.
+  /// ISO-8601 timestamp when this Croft was first initialized or joined.
   pub joined_at: String,
-  /// Hardware resource capacity and active workload allocations.
+  /// Hardware capacity and active reservations.
   pub resources: CroftResources,
 }
 
 impl Croft {
-  /// Returns `true` if this Croft has the [`CroftRole::Server`] role.
+  /// Returns `true` if this Croft operates as a consensus Server.
   pub fn is_server(&self) -> bool {
     self.roles.contains(&CroftRole::Server)
   }
 
-  /// Returns `true` if this Croft has the [`CroftRole::Worker`] role.
+  /// Returns `true` if this Croft operates as a workload Worker.
   pub fn is_worker(&self) -> bool {
     self.roles.contains(&CroftRole::Worker)
   }
@@ -91,16 +91,19 @@ mod tests {
   use super::*;
 
   #[test]
-  fn croft_role_parsing() {
-    assert_eq!("server".parse::<CroftRole>().unwrap(), CroftRole::Server);
-    assert_eq!("worker".parse::<CroftRole>().unwrap(), CroftRole::Worker);
-    assert_eq!("SERVER".parse::<CroftRole>().unwrap(), CroftRole::Server);
-    assert_eq!("Worker ".parse::<CroftRole>().unwrap(), CroftRole::Worker);
-    assert!("invalid".parse::<CroftRole>().is_err());
+  fn croft_role_from_str_and_display() {
+    assert_eq!(CroftRole::from_str("server").unwrap(), CroftRole::Server);
+    assert_eq!(CroftRole::from_str("SERVER").unwrap(), CroftRole::Server);
+    assert_eq!(CroftRole::from_str("worker").unwrap(), CroftRole::Worker);
+    assert_eq!(CroftRole::from_str("Worker").unwrap(), CroftRole::Worker);
+    assert!(CroftRole::from_str("invalid").is_err());
+
+    assert_eq!(CroftRole::Server.to_string(), "server");
+    assert_eq!(CroftRole::Worker.to_string(), "worker");
   }
 
   #[test]
-  fn croft_role_serialization_roundtrip() {
+  fn croft_role_serde_roundtrip() {
     let server = CroftRole::Server;
     let json = serde_json::to_string(&server).unwrap();
     assert_eq!(json, "\"server\"");
@@ -124,18 +127,18 @@ mod tests {
       tags: vec!["zone-a".to_string()],
       joined_at: "2026-09-05T12:00:00Z".to_string(),
       resources: CroftResources {
-        cpu_total: 16_000_000_000,
-        cpu_yardable: 14_400_000_000,
-        cpu_reserved: 0,
-        mem_total: 16_000_000_000,
-        mem_yardable: 14_400_000_000,
-        mem_reserved: 0,
+        cpu_total: 16000.0,
+        cpu_yardable: 14400.0,
+        cpu_reserved: 0.0,
+        mem_total: 16000.0,
+        mem_yardable: 14400.0,
+        mem_reserved: 0.0,
       },
     };
 
     assert!(!croft.is_server());
     assert!(croft.is_worker());
-    assert_eq!(croft.resources.cpu_available(), 14_400_000_000);
+    assert_eq!(croft.resources.cpu_available(), 14400.0);
 
     let json = serde_json::to_string(&croft).unwrap();
     let deserialized: Croft = serde_json::from_str(&json).unwrap();

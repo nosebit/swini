@@ -13,8 +13,11 @@ use crate::core::proto::croft::JoinReq;
 use crate::core::telemetry;
 use crate::croft::config::{self, Config, DEFAULT_NAME};
 use crate::croft::{Clerk as CroftClerk, Croft, LiveCroft};
+use crate::drover::Drover;
+use crate::pig::PigClerk;
 use crate::store::barn::Node as BarnNode;
 use crate::store::{SpreadNode, SpreadStore};
+use crate::supervisor::Supervisor;
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::path::PathBuf;
@@ -48,6 +51,21 @@ pub async fn start(
 
   let croft = Arc::new(LiveCroft::spawn(&config).await?);
 
+  let _croft_clerk = CroftClerk::spawn(croft.clone())?;
+  let _pig_clerk = PigClerk::spawn(croft.clone())?;
+  let _supervisor = Supervisor::spawn(croft.clone());
+
+  let bind_addr = config.addr;
+  let gate = croft.gate.clone();
+  let server_handle = tokio::spawn(async move {
+    if let Err(e) = gate.listen(bind_addr).await {
+      tracing::error!(error = %e, "Gate server terminated unexpectedly");
+    }
+  });
+
+  // Brief yield to allow the TCP listener to bind
+  tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
   if config.join_addresses.is_empty() && croft.is_server() {
     let self_node = BarnNode::new(croft.id, croft.addr.clone());
     let mut members = BTreeMap::new();
@@ -57,18 +75,36 @@ pub async fn start(
     let _ = bootstrap_join(&config, &croft).await;
   }
 
-  let _croft_clerk = CroftClerk::spawn(croft.clone())?;
+  // Drover cluster orchestrator runs exclusively on the Primary Croft (Raft
+  // leader)
+  let drover = Arc::new(Drover::new(croft.clone()));
+  let mut is_leader_rx = croft.barn.watch_is_leader();
+  let _drover_manager = tokio::spawn(async move {
+    let mut current_task: Option<tokio::task::JoinHandle<()>> = None;
+
+    loop {
+      let is_leader = *is_leader_rx.borrow_and_update();
+      if is_leader {
+        if current_task.is_none() {
+          tracing::info!("Croft became Primary; starting Drover orchestrator");
+          let d = drover.clone();
+          current_task = Some(tokio::spawn(async move {
+            d.run().await;
+          }));
+        }
+      } else if let Some(task) = current_task.take() {
+        tracing::info!("Croft lost Primary role; stopping Drover orchestrator");
+        task.abort();
+      }
+
+      if is_leader_rx.changed().await.is_err() {
+        break;
+      }
+    }
+  });
 
   // Persist the croft info into the Barn
   let _ = croft.persist().await;
-
-  let bind_addr = config.addr;
-  let gate = croft.gate.clone();
-  let server_handle = tokio::spawn(async move {
-    if let Err(e) = gate.listen(bind_addr).await {
-      tracing::error!(error = %e, "Gate server terminated unexpectedly");
-    }
-  });
 
   let mut sigterm =
     tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
@@ -233,14 +269,18 @@ pub async fn status(name: Option<String>) -> Result<(), Box<dyn Error>> {
 async fn dial_join(
   peer_addr: &str,
   croft: &Croft,
+  timeouts: &crate::croft::config::TimeoutsConfig,
 ) -> Result<Vec<Croft>, Box<dyn Error>> {
-  let endpoint =
+  let endpoint_uri =
     if peer_addr.starts_with("http://") || peer_addr.starts_with("https://") {
       peer_addr.to_string()
     } else {
       format!("http://{}", peer_addr)
     };
 
+  let endpoint = tonic::transport::Endpoint::from_shared(endpoint_uri)?
+    .connect_timeout(timeouts.connect)
+    .timeout(timeouts.join);
   let mut client = CroftApiClient::connect(endpoint).await?;
   let req = JoinReq {
     id: croft.id,
@@ -272,7 +312,7 @@ pub async fn bootstrap_join(
   croft: &LiveCroft,
 ) -> Result<(), Box<dyn Error>> {
   for peer in &config.join_addresses {
-    match dial_join(peer, croft).await {
+    match dial_join(peer, croft, &config.timeouts).await {
       Ok(server_crofts) => {
         if !croft.is_server() {
           let barn_nodes: Vec<BarnNode> = server_crofts
@@ -372,8 +412,12 @@ mod tests {
     };
     let worker_croft = LiveCroft::spawn(&worker_config).await.unwrap();
 
-    let join_res =
-      dial_join(&format!("http://{}", server_addr), &worker_croft).await;
+    let join_res = dial_join(
+      &format!("http://{}", server_addr),
+      &worker_croft,
+      &worker_config.timeouts,
+    )
+    .await;
     assert!(join_res.is_ok());
 
     let server_crofts = join_res.unwrap();

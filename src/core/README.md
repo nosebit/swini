@@ -8,3 +8,5 @@ definitions shared across Swini:
 - **[`telemetry.rs`](./telemetry.rs)**: Structured tracing and rolling daily log
   file appenders.
 - **[`proto/`](./proto/)**: Generated gRPC service traits and protobuf types.
+- **[`sys/`](./sys/)**: Host system driver abstraction, process execution,
+  signaling, and platform adapters.

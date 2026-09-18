@@ -10,7 +10,7 @@ use std::error::Error;
 use std::path::{Path, PathBuf};
 
 /// Persistent runtime state recorded by a running Regent supervisor process.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RegentState {
   /// Operating system process ID of the running Regent.
   pub pid: u32,

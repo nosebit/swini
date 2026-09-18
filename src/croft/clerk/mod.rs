@@ -123,7 +123,9 @@ impl Clerk {
     match found {
       Some(croft) => {
         let telemetry = if live {
-          Some(crate::croft::CroftTelemetry::sample())
+          Some(crate::croft::CroftTelemetry::sample(
+            croft.resources.cpu_total,
+          ))
         } else {
           None
         };

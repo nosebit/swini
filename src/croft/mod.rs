@@ -20,7 +20,7 @@ pub mod resources;
 pub mod types;
 
 pub use clerk::Clerk;
-pub use config::Config;
+pub use config::{Config, ResourcesConfig};
 pub use gate::Gate;
 pub use resources::{CroftResources, CroftTelemetry};
 pub use types::{Croft, CroftRole};
@@ -95,6 +95,12 @@ impl LiveCroft {
       .await?,
     );
 
+    let resources = config
+      .resources
+      .as_ref()
+      .map(ResourcesConfig::to_resources)
+      .unwrap_or_else(CroftResources::probe);
+
     let base = Croft {
       id,
       name: config.name.clone(),
@@ -102,7 +108,7 @@ impl LiveCroft {
       roles: config.roles.clone(),
       tags: config.tags.clone(),
       joined_at: chrono::Utc::now().to_rfc3339(),
-      resources: CroftResources::probe(),
+      resources,
     };
 
     Ok(Self { base, barn, gate })
@@ -132,7 +138,8 @@ impl LiveCroft {
   /// when bootstrapping a fresh cluster.
   ///
   /// # Errors
-  /// Returns an error if serialization fails or Barn write fails after all retries.
+  /// Returns an error if serialization fails or Barn write fails after all
+  /// retries.
   pub async fn persist(&self) -> Result<(), Box<dyn Error>> {
     let key = format!("{}{}", CROFT_PREFIX, self.id);
     let payload = serde_json::to_vec(&self.base)?;

@@ -254,12 +254,12 @@ mod tests {
       roles: vec!["server".to_string(), "worker".to_string()],
       tags: vec!["zone-a".to_string()],
       resources: Some(ProtoCroftResources {
-        cpu_total: 10_000_000_000,
-        cpu_yardable: 9_000_000_000,
-        cpu_reserved: 0,
-        mem_total: 16_000_000_000,
-        mem_yardable: 14_000_000_000,
-        mem_reserved: 0,
+        cpu_total: 10000.0,
+        cpu_yardable: 9000.0,
+        cpu_reserved: 0.0,
+        mem_total: 16000.0,
+        mem_yardable: 14000.0,
+        mem_reserved: 0.0,
       }),
     };
     let croft = Croft::try_from(valid_req).unwrap();
@@ -268,7 +268,7 @@ mod tests {
     assert_eq!(croft.addr, "10.0.0.1:7440");
     assert_eq!(croft.roles, vec![CroftRole::Server, CroftRole::Worker]);
     assert_eq!(croft.tags, vec!["zone-a"]);
-    assert_eq!(croft.resources.cpu_total, 10_000_000_000);
+    assert_eq!(croft.resources.cpu_total, 10000.0);
 
     let empty_name = JoinReq {
       name: "   ".to_string(),
@@ -317,12 +317,12 @@ mod tests {
       tags: vec!["fast".to_string()],
       joined_at: "2026-09-05T12:00:00Z".to_string(),
       resources: CroftResources {
-        cpu_total: 25_600_000_000,
-        cpu_yardable: 23_040_000_000,
-        cpu_reserved: 1_000_000_000,
-        mem_total: 32_000_000_000,
-        mem_yardable: 28_800_000_000,
-        mem_reserved: 2_000_000_000,
+        cpu_total: 25600.0,
+        cpu_yardable: 23040.0,
+        cpu_reserved: 1000.0,
+        mem_total: 32000.0,
+        mem_yardable: 28800.0,
+        mem_reserved: 2000.0,
       },
     };
 
@@ -373,12 +373,12 @@ mod tests {
         roles: vec!["worker".to_string()],
         tags: vec!["zone-a".to_string()],
         resources: Some(ProtoCroftResources {
-          cpu_total: 10_000_000_000,
-          cpu_yardable: 9_000_000_000,
-          cpu_reserved: 0,
-          mem_total: 16_000_000_000,
-          mem_yardable: 14_000_000_000,
-          mem_reserved: 0,
+          cpu_total: 10000.0,
+          cpu_yardable: 9000.0,
+          cpu_reserved: 0.0,
+          mem_total: 16000.0,
+          mem_yardable: 14000.0,
+          mem_reserved: 0.0,
         }),
       }))
       .await;

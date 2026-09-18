@@ -1,0 +1,45 @@
+# Sandbox Pig Workload Manifest
+space: sandbox
+
+herds:
+  - name: backend
+    defaults:
+      placement:
+        method: spread
+    pigs:
+      - name: web-api
+        size: 2
+        tags:
+          - api
+        piglet:
+          placement:
+            yard:
+              cpu: "500 MHz"
+              mem: "512 MB"
+          tasks:
+            - name: server
+              mode: persistent
+              exec:
+                command:
+                  - sleep
+                  - "300"
+
+      - name: compute-worker
+        size: 1
+        tags:
+          - compute
+        piglet:
+          placement:
+            croft:
+              tags:
+                - gpu
+            yard:
+              cpu: "4 GHz"
+              mem: "4 GB"
+          tasks:
+            - name: processor
+              mode: persistent
+              exec:
+                command:
+                  - sleep
+                  - "300"

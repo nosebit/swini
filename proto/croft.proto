@@ -9,12 +9,12 @@ service CroftApi {
 }
 
 message CroftResources {
-  uint64 cpu_total = 1;
-  uint64 cpu_yardable = 2;
-  uint64 cpu_reserved = 3;
-  uint64 mem_total = 4;
-  uint64 mem_yardable = 5;
-  uint64 mem_reserved = 6;
+  double cpu_total = 1;
+  double cpu_yardable = 2;
+  double cpu_reserved = 3;
+  double mem_total = 4;
+  double mem_yardable = 5;
+  double mem_reserved = 6;
 }
 
 message ListReq {}
@@ -30,8 +30,8 @@ message StatusReq {
 }
 
 message CroftTelemetry {
-  uint64 mem_used = 1;
-  float cpu_used = 2;
+  double cpu_used = 1;
+  double mem_used = 2;
 }
 
 message StatusRes {

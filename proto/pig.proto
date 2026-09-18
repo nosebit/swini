@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package swini.pig;
+
+service PigApi {
+  rpc Run(PigRunReq) returns (PigRunRes);
+  rpc Stop(PigStopReq) returns (PigStopRes);
+}
+
+message PigRunReq {
+  string config_yaml = 1;
+}
+
+message PigRunRes {
+  string status = 1;
+  repeated string started_pigs = 2;
+}
+
+message PigStopReq {
+  string space = 1;
+  string name = 2;
+}
+
+message PigStopRes {
+  string status = 1;
+}

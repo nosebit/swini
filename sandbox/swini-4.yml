@@ -7,6 +7,9 @@ tags:
   - zone-b
   - compute
   - gpu
+resources:
+  cpu: 8 GHz
+  mem: 16 GB
 join_addresses:
   - 127.0.0.1:7441
   - 127.0.0.1:7442
